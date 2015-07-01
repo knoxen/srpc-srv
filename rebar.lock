@@ -1,1 +1,8 @@
-[].
+[{<<"rncryptor">>,
+  {git,"https://github.com/dingosky/RNCryptor-erlang.git",
+       {ref,"bebdd7c39e48a2ef5b4b4ca63c9138e8feab10a4"}},
+  1},
+ {<<"srpcryptor_lib">>,
+  {git,"git@github.com:knoxen/SRPCrypto-Lib-Erlang.git",
+       {ref,"277e112d232c3b488989cc2f93a451e61ecc26b0"}},
+  0}].

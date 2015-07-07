@@ -82,9 +82,9 @@ register(KeyId, RegistrationPacket) ->
               RespData = srpcryptor_api_impl:registration_response_data(RegId, ReqData),
               ProData = <<>>,
               ProRespData = create_pro_resp_data(ProData, RespData),
-              case srpcryptor_api_impl:get(registration, RegId) of
+              case srpcryptor_api_impl:get(srp_user, RegId) of
                 undefined ->
-                  srpcryptor_api_impl:put(registration, RegId, RegData),
+                  srpcryptor_api_impl:put(srp_user, RegId, RegData),
                   srpcryptor_lib:registration_response_packet(ok, KeyInfo, ProRespData);
                 {ok, _RegData} ->
                   srpcryptor_lib:registration_response_packet(duplicate, KeyInfo, ProRespData)
@@ -107,7 +107,7 @@ login(KeyId, LoginPacket) ->
         {ok, {RegId, ClientPublicKey, ProReqData}} ->
           case parse_pro_req_data(ProReqData) of
             {ok, ReqData} ->
-              case srpcryptor_api_impl:get(registration, RegId) of
+              case srpcryptor_api_impl:get(srp_user, RegId) of
                 {ok, RegData} ->
                   RespData = srpcryptor_api_impl:login_response_data(RegId, ReqData),
                   ProData = <<>>,
@@ -145,7 +145,7 @@ validate_login(KeyId, ValidatePacket) ->
               RegId = maps:get(entityId, LoginReqData),
               case parse_pro_req_data(ProReqData) of
                 {ok, ReqData} ->
-                  case srpcryptor_api_impl:get(registration, RegId) of
+                  case srpcryptor_api_impl:get(srp_user, RegId) of
                     {ok, _RegData} ->
                       RespData = 
                         srpcryptor_api_impl:login_validate_response_data(RegId, ReqData),

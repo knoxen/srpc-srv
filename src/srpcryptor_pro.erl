@@ -136,8 +136,8 @@ login(KeyId, LoginPacket) ->
 
 validate_login(KeyId, ValidatePacket) ->
   case srpcryptor_api_impl:get(lib_key, KeyId) of
-    {ok, Key} ->
-      KeyInfo = {KeyId, Key},
+    {ok, LibKey} ->
+      KeyInfo = {KeyId, LibKey},
       case srpcryptor_lib:login_validate_packet_data(KeyInfo, ValidatePacket) of
         {ok, {ClientChallenge, LoginReqId, ProReqData}} ->
           case srpcryptor_api_impl:get(key_req, LoginReqId) of
@@ -158,8 +158,10 @@ validate_login(KeyId, ValidatePacket) ->
                                                                          ProRespData) of
                         {ok, RespPacket} ->
                           LoginKey = maps:get(key, LoginReqData),
+                          HmacKey = crypto:hmac(sha256, LoginKey, LibKey),
                           SessionData = #{entityId   => RegId
                                          ,sessionKey => LoginKey
+                                         ,hmacKey    => HmacKey
                                          },
                           srpcryptor_api_impl:put(session_key, SessionId, SessionData),
                           {ok, RespPacket};

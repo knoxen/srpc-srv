@@ -4,5 +4,5 @@
   1},
  {<<"srpcryptor_lib">>,
   {git,"git@github.com:knoxen/SRPCrypto-Lib-Erlang.git",
-       {ref,"a6b5da12381e945c435a1aaefa88dd663f82e7a2"}},
+       {ref,"65e5d79197d4387d57c8ade6627e8f91e152897f"}},
   0}].

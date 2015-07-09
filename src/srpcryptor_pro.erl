@@ -49,17 +49,24 @@ lib_key(LibKeyPacket) ->
 validate_lib_key(KeyId, ValidatePacket) ->
   case srpcryptor_api_impl:get(key_req, KeyId) of
     {ok, KeyData} ->
-      Key = maps:get(key, KeyData),
-      case srpcryptor_lib:lib_key_validate_packet_data({KeyId, Key}, ValidatePacket) of
+      LibKey = maps:get(key, KeyData),
+      HmacKey = crypto:hmac(sha256, LibKey, KeyId),
+      KeyInfo = {KeyId, LibKey, HmacKey},
+      case srpcryptor_lib:lib_key_validate_packet_data(KeyInfo, ValidatePacket) of
         {ok, {ClientChallenge, ReqData}} ->
           RespData = srpcryptor_api_impl:lib_key_validate_response_data(ReqData),
-          case srpcryptor_lib:lib_key_validate_response_packet({KeyId, KeyData},
-                                                               ClientChallenge, RespData) of
+          EpochSeconds = srpcryptor_util:epoch_seconds(),
+          ProRespData = <<EpochSeconds:?EPOCH_BITS, RespData/binary>>,
+          case srpcryptor_lib:lib_key_validate_response_packet({KeyId, KeyData, HmacKey},
+                                                               ClientChallenge, ProRespData) of
             {ok, RespPacket} ->
-              srpcryptor_api_impl:put(lib_key, KeyId, Key),
+              LibKeyData = #{entityId => KeyId
+                            ,libKey   => LibKey
+                            ,hmacKey  => HmacKey},
+              srpcryptor_api_impl:put(lib_key, KeyId, LibKeyData),
               {ok, RespPacket};
             {invalid, RespPacket} ->
-              %% CxTBD Report invalid
+              %% CxTBD Log/report invalid result
               {ok, RespPacket};
             Error ->
               Error
@@ -72,9 +79,8 @@ validate_lib_key(KeyId, ValidatePacket) ->
   end.
 
 register(KeyId, RegistrationPacket) ->
-  case srpcryptor_api_impl:get(lib_key, KeyId) of
-    {ok, Key} ->
-      KeyInfo = {KeyId, Key},
+  case info_for_key_id(KeyId) of
+    {ok, KeyInfo} ->
       case srpcryptor_lib:registration_packet_data(KeyInfo, RegistrationPacket) of
         {ok, {RegId, RegData, ProReqData}} ->
           case parse_pro_req_data(ProReqData) of
@@ -95,14 +101,13 @@ register(KeyId, RegistrationPacket) ->
         Error ->
           Error
       end;
-    undefined ->
-      {error, <<"No Lib Key for KeyId: ", KeyId/binary>>}
+    Error ->
+      Error
   end.
 
 login(KeyId, LoginPacket) ->
-  case srpcryptor_api_impl:get(lib_key, KeyId) of
-    {ok, Key} ->
-      KeyInfo = {KeyId, Key},
+  case info_for_key_id(KeyId) of
+    {ok, KeyInfo} ->
       case srpcryptor_lib:login_packet_data(KeyInfo, LoginPacket) of
         {ok, {RegId, ClientPublicKey, ProReqData}} ->
           case parse_pro_req_data(ProReqData) of
@@ -130,14 +135,13 @@ login(KeyId, LoginPacket) ->
         Error ->
           Error
       end;
-    undefined ->
-      {error, <<"No Lib Key for KeyId: ", KeyId/binary>>}
+    Error ->
+      Error
   end.
 
 validate_login(KeyId, ValidatePacket) ->
-  case srpcryptor_api_impl:get(lib_key, KeyId) of
-    {ok, LibKey} ->
-      KeyInfo = {KeyId, LibKey},
+  case info_for_key_id(KeyId) of
+    {ok, KeyInfo} ->
       case srpcryptor_lib:login_validate_packet_data(KeyInfo, ValidatePacket) of
         {ok, {ClientChallenge, LoginReqId, ProReqData}} ->
           case srpcryptor_api_impl:get(key_req, LoginReqId) of
@@ -158,6 +162,7 @@ validate_login(KeyId, ValidatePacket) ->
                                                                          ProRespData) of
                         {ok, RespPacket} ->
                           LoginKey = maps:get(key, LoginReqData),
+                          {_KeyId, LibKey, _LibHmacKey} = KeyInfo,
                           HmacKey = crypto:hmac(sha256, LoginKey, LibKey),
                           SessionData = #{entityId   => RegId
                                          ,sessionKey => LoginKey
@@ -191,14 +196,13 @@ validate_login(KeyId, ValidatePacket) ->
         Error ->
           Error
       end;
-    undefined ->
-      {error, <<"No Lib Key data for KeyId: ", KeyId/binary>>}
+    Error ->
+      Error
   end.
 
 epoch(KeyId, Body) ->
-  case srpcryptor_api_impl:get(lib_key, KeyId) of
-    {ok, Key} ->
-      KeyInfo = {KeyId, Key},
+  case info_for_key_id(KeyId) of
+    {ok, KeyInfo} ->
       case srpcryptor_encryptor:decrypt(KeyInfo, Body) of
         {ok, <<RandomStamp:?EPOCH_STAMP_BYTES/binary>>} ->
           Seconds = srpcryptor_util:epoch_seconds(),
@@ -209,8 +213,8 @@ epoch(KeyId, Body) ->
         Error ->
           Error
       end;
-    undefined ->
-      {error, <<"No Lib Key for KeyId: ", KeyId/binary>>}
+    Error ->
+      Error
   end.    
 
 encrypt_data(KeyInfo, RespData) ->
@@ -228,6 +232,18 @@ decrypt_packet(KeyInfo, Packet) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
+info_for_key_id(KeyId) ->
+  case srpcryptor_api_impl:get(lib_key, KeyId) of
+    {ok, #{entityId := KeyId
+          ,libKey   := LibKey
+          ,hmacKey  := HmacKey}} ->
+      {ok, {KeyId, LibKey, HmacKey}};
+    {ok, _Map} ->
+      {error, <<"Wrong EntityId for KeyId mapping">>};
+    undefined ->
+      {error, <<"No Lib Key for KeyId: ", KeyId/binary>>}
+  end.      
+
 req_age_tolerance() ->
   case application:get_env(req_age_tolerance) of
     {ok, AgeTolerance} ->

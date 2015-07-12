@@ -1,8 +1,8 @@
 [{<<"rncryptor">>,
   {git,"https://github.com/RNCryptor/RNCryptor-erlang.git",
-       {ref,"dbb76fcfc1b8c8e64c8ab54de8aaed1292f57170"}},
+       {ref,"1f6da88b4d2e4f7a49eb4256be43e1a91aa7004a"}},
   1},
  {<<"srpcryptor_lib">>,
   {git,"git@github.com:knoxen/SRPCrypto-Lib-Erlang.git",
-       {ref,"d35ae9c98f618ce068820b04134b7b934414080b"}},
+       {ref,"f967cb9013ac44dd03caa2cbce4bf378fe660245"}},
   0}].

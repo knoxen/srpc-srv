@@ -1,4 +1,4 @@
 [{<<"srpcryptor_lib">>,
   {git,"git@bitbucket.org:knoxen/srpcryptor-lib-erlang.git",
-       {ref,"5acaa84f622366a7acc6723bd74bd066897bbf3d"}},
+       {ref,"bf3cc5bfe4cde1cb38da1a177087e337247b0f4a"}},
   0}].

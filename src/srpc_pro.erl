@@ -1,4 +1,4 @@
--module(srpcryptor_pro).
+-module(srpc_pro).
 
 -author("paul@knoxen.com").
 
@@ -13,7 +13,7 @@
         ,epoch/2
         ]).
 
--define(APP_NAME, srpcryptor_pro).
+-define(APP_NAME, srpc_pro).
 
 -define(PRO_VSN,            1).
 -define(PRO_VSN_BITS,       8).
@@ -25,13 +25,13 @@
 %% API functions
 %%====================================================================
 lib_key(LibKeyPacket) ->
-  case srpcryptor_lib:lib_key_packet_data(LibKeyPacket) of 
+  case srpc_lib:lib_key_packet_data(LibKeyPacket) of 
     {ok, {ClientPublicKey, ReqData}} ->
-      RespData = srpcryptor_api_impl:lib_key_response_data(ReqData),
-      case srpcryptor_lib:lib_key_response_packet(ClientPublicKey, RespData) of
+      RespData = srpc_api_impl:lib_key_response_data(ReqData),
+      case srpc_lib:lib_key_response_packet(ClientPublicKey, RespData) of
         {ok, {SrpData, RespPacket}} ->
           LibKeyId = maps:get(keyId, SrpData),
-          srpcryptor_api_impl:put(srp_data, LibKeyId, SrpData),
+          srpc_api_impl:put(srp_data, LibKeyId, SrpData),
           {ok, RespPacket};
         Error ->
           Error
@@ -41,17 +41,17 @@ lib_key(LibKeyPacket) ->
   end.
 
 validate_lib_key(LibKeyId, ValidatePacket) ->
-  case srpcryptor_api_impl:get(srp_data, LibKeyId) of
+  case srpc_api_impl:get(srp_data, LibKeyId) of
     {ok, SrpData} ->
-      case srpcryptor_lib:lib_key_validate_packet_data(SrpData, ValidatePacket) of
+      case srpc_lib:lib_key_validate_packet_data(SrpData, ValidatePacket) of
         {ok, {LibKeyInfo, ClientChallenge, ReqData}} ->
-          RespData = srpcryptor_api_impl:lib_key_validation_response_data(ReqData),
+          RespData = srpc_api_impl:lib_key_validation_response_data(ReqData),
           Epoch = erlang:system_time(seconds),
           ProRespData = <<Epoch:?EPOCH_BITS, RespData/binary>>,
-          case srpcryptor_lib:lib_key_validation_response_packet(SrpData, LibKeyInfo,
+          case srpc_lib:lib_key_validation_response_packet(SrpData, LibKeyInfo,
                                                                  ClientChallenge, ProRespData) of
             {ok, RespPacket} ->
-              srpcryptor_api_impl:put(lib_key, LibKeyId, LibKeyInfo),
+              srpc_api_impl:put(lib_key, LibKeyId, LibKeyInfo),
               {ok, RespPacket};
             {invalid, RespPacket} ->
               %% CxTBD Log/report invalid result
@@ -69,20 +69,20 @@ validate_lib_key(LibKeyId, ValidatePacket) ->
 register(LibKeyId, RegistrationPacket) ->
   case lib_key_data_for_id(LibKeyId) of
     {ok, LibKeyInfo} ->
-      case srpcryptor_lib:registration_packet_data(LibKeyInfo, RegistrationPacket) of
+      case srpc_lib:registration_packet_data(LibKeyInfo, RegistrationPacket) of
         {ok, {SrpUserData, ProReqData}} ->
           case parse_pro_req_data(ProReqData) of
             {ok, ReqData} ->
               SrpId = maps:get(srpId, SrpUserData),
-              RespData = srpcryptor_api_impl:registration_response_data(SrpId, ReqData),
+              RespData = srpc_api_impl:registration_response_data(SrpId, ReqData),
               ProData = <<>>,
               ProRespData = create_pro_resp_data(ProData, RespData),
-              case srpcryptor_api_impl:get(srp_user, SrpId) of
+              case srpc_api_impl:get(srp_user, SrpId) of
                 undefined ->
-                  srpcryptor_api_impl:put(srp_user, SrpId, SrpUserData),
-                  srpcryptor_lib:registration_response_packet(ok, LibKeyInfo, ProRespData);
+                  srpc_api_impl:put(srp_user, SrpId, SrpUserData),
+                  srpc_lib:registration_response_packet(ok, LibKeyInfo, ProRespData);
                 {ok, _SrpUserData} ->
-                  srpcryptor_lib:registration_response_packet(duplicate, LibKeyInfo, ProRespData)
+                  srpc_lib:registration_response_packet(duplicate, LibKeyInfo, ProRespData)
               end;
             Error ->
               Error
@@ -97,26 +97,26 @@ register(LibKeyId, RegistrationPacket) ->
 login(LibKeyId, UserKeyPacket) ->
   case lib_key_data_for_id(LibKeyId) of
     {ok, LibKeyInfo} ->
-      case srpcryptor_lib:user_key_packet_data(LibKeyInfo, UserKeyPacket) of
+      case srpc_lib:user_key_packet_data(LibKeyInfo, UserKeyPacket) of
         {ok, {SrpId, ClientPublicKey, ProReqData}} ->
           case parse_pro_req_data(ProReqData) of
             {ok, ReqData} ->
-              case srpcryptor_api_impl:get(srp_user, SrpId) of
+              case srpc_api_impl:get(srp_user, SrpId) of
                 {ok, SrpUserData} ->
-                  RespData = srpcryptor_api_impl:login_response_data(SrpId, ReqData),
+                  RespData = srpc_api_impl:login_response_data(SrpId, ReqData),
                   ProData = <<>>,
                   ProRespData = create_pro_resp_data(ProData, RespData),
-                  case srpcryptor_lib:login_response_packet(LibKeyInfo, SrpUserData,
+                  case srpc_lib:login_response_packet(LibKeyInfo, SrpUserData,
                                                             ClientPublicKey, ProRespData) of
                     {ok, {SrpData, RespPacket}} ->
                       UserKeyId = maps:get(keyId, SrpData),
-                      srpcryptor_api_impl:put(srp_data, UserKeyId, SrpData),
+                      srpc_api_impl:put(srp_data, UserKeyId, SrpData),
                       {ok, RespPacket};
                     Error ->
                       Error
                   end;
                 undefined ->
-                  srpcryptor_lib:user_key_response_packet(LibKeyInfo, invalid, ClientPublicKey, SrpId)
+                  srpc_lib:user_key_response_packet(LibKeyInfo, invalid, ClientPublicKey, SrpId)
               end;
             Error ->
               Error
@@ -131,24 +131,24 @@ login(LibKeyId, UserKeyPacket) ->
 validate_login(LibKeyId, ValidatePacket) ->
   case lib_key_data_for_id(LibKeyId) of
     {ok, LibKeyInfo} ->
-      case srpcryptor_lib:user_key_validate_packet_data(LibKeyInfo, ValidatePacket) of
+      case srpc_lib:user_key_validate_packet_data(LibKeyInfo, ValidatePacket) of
         {ok, {UserKeyId, ClientChallenge, ProReqData}} ->
-          case srpcryptor_api_impl:get(srp_data, UserKeyId) of
+          case srpc_api_impl:get(srp_data, UserKeyId) of
             {ok, SrpData} ->
               case parse_pro_req_data(ProReqData) of
                 {ok, ReqData} ->
                   SrpId = maps:get(entityId, SrpData),
-                  RespData = srpcryptor_api_impl:login_validation_response_data(SrpId, ReqData),
+                  RespData = srpc_api_impl:login_validation_response_data(SrpId, ReqData),
                   {Len, SessionId} = rand_session_id(),
                   ProData = <<Len, SessionId/binary>>,
                   ProRespData = create_pro_resp_data(ProData, RespData),
                   SrpData2 = maps:put(keyId, SessionId, SrpData),
-                  case srpcryptor_lib:login_validation_response_packet(LibKeyInfo, SrpData2,
+                  case srpc_lib:login_validation_response_packet(LibKeyInfo, SrpData2,
                                                                        ClientChallenge,
                                                                        ProRespData) of
                     {ok, UserKeyInfo, RespPacket} ->
                       maps:put(sessionId, SessionId, UserKeyInfo),
-                      srpcryptor_api_impl:put(user_key, SessionId, UserKeyInfo),
+                      srpc_api_impl:put(user_key, SessionId, UserKeyInfo),
                       {ok, RespPacket};
                     {invalid, _UserKeyInfo, RespPacket} ->
                       %% CxTBD Report invalid
@@ -158,13 +158,13 @@ validate_login(LibKeyId, ValidatePacket) ->
                   Error
               end;
             undefined ->
-              LibId = srpcryptor_lib:lib_id(),
+              LibId = srpc_lib:lib_id(),
               case UserKeyId of
                 LibId ->
                   {Len, SessionId} = rand_session_id(),
                   ProData = <<Len, SessionId/binary>>,
                   ProRespData = create_pro_resp_data(ProData, <<>>),
-                  srpcryptor_lib:user_key_validation_response_packet(LibKeyInfo, invalid,
+                  srpc_lib:user_key_validation_response_packet(LibKeyInfo, invalid,
                                                                      ClientChallenge, ProRespData);
                 _ ->
                   {error, <<"No User Key data for UserKeyId: ", UserKeyId/binary>>}
@@ -180,11 +180,11 @@ validate_login(LibKeyId, ValidatePacket) ->
 epoch(LibKeyId, Body) ->
   case lib_key_data_for_id(LibKeyId) of
     {ok, LibKeyInfo} ->
-      case srpcryptor_encryptor:decrypt(LibKeyInfo, Body) of
+      case srpc_encryptor:decrypt(LibKeyInfo, Body) of
         {ok, <<RandomStamp:?EPOCH_STAMP_SIZE/binary>>} ->
           Epoch = erlang:system_time(seconds),
           RespData = <<Epoch:?EPOCH_BITS, RandomStamp/binary>>,
-          srpcryptor_encryptor:encrypt(LibKeyInfo, RespData);
+          srpc_encryptor:encrypt(LibKeyInfo, RespData);
         {ok, _ReqData} ->
           {error, <<"Invalid Epoch stamp">>};
         Error ->
@@ -196,10 +196,10 @@ epoch(LibKeyId, Body) ->
 
 encrypt_data(KeyInfo, RespData) ->
   ProRespData = create_pro_resp_data(<<>>, RespData),
-  srpcryptor_lib:encrypt(KeyInfo, ProRespData).
+  srpc_lib:encrypt(KeyInfo, ProRespData).
 
 decrypt_packet(KeyInfo, Packet) ->
-  case srpcryptor_lib:decrypt(KeyInfo, Packet) of
+  case srpc_lib:decrypt(KeyInfo, Packet) of
     {ok, ProReqData} ->
       parse_pro_req_data(ProReqData);
     Error ->
@@ -210,7 +210,7 @@ decrypt_packet(KeyInfo, Packet) ->
 %% Internal functions
 %%====================================================================
 lib_key_data_for_id(LibKeyId) ->
-  case srpcryptor_api_impl:get(lib_key, LibKeyId) of
+  case srpc_api_impl:get(lib_key, LibKeyId) of
     {ok, LibKeyInfo} ->
       DataKeyId = maps:get(keyId, LibKeyInfo),
       case LibKeyId =:= DataKeyId of
@@ -242,7 +242,7 @@ rand_session_id() ->
         {ok, Len} = application:get_env(?APP_NAME, sid_len),
         Len
     end,
-  {SidLen, srpcryptor_util:rand_id(SidLen)}.
+  {SidLen, srpc_util:rand_id(SidLen)}.
 
 
 parse_pro_req_data(<<?PRO_VSN:?PRO_VSN_BITS, DataEpoch:?EPOCH_BITS, ReqData/binary>>) ->

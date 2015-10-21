@@ -1,5 +1,5 @@
-{application, srpcryptor_pro,
- [{description, "SRPCryptor Pro"}
+{application, srpc_pro,
+ [{description, "Srp Cryptor Pro"}
  ,{vsn, "0.9.1"}
  ,{registered, []}
  ,{applications,

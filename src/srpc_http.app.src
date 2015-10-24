@@ -1,5 +1,5 @@
-{application, srpc_pro,
- [{description, "Srp Cryptor Pro"}
+{application, srpc_http,
+ [{description, "Srp Cryptor Http"}
  ,{vsn, "0.9.1"}
  ,{registered, []}
  ,{applications,

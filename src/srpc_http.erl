@@ -42,13 +42,13 @@ lib_key_exchange(ExchangeRequest) ->
 lib_key_validate(LibKeyId, ValidationRequest) ->
   case srpc_api_impl:get(srp_data, LibKeyId) of
     {ok, SrpData} ->
-      case srpc_lib:lib_key_process_validate_request(SrpData, ValidationRequest) of
+      case srpc_lib:lib_key_process_validation_request(SrpData, ValidationRequest) of
         {ok, {LibKeyInfo, ClientChallenge, ReqData}} ->
           RespData = srpc_api_impl:lib_key_validation_data(ReqData),
           Epoch = erlang:system_time(seconds),
-          ProRespData = <<Epoch:?EPOCH_BITS, RespData/binary>>,
+          SrpcHttpRespData = <<Epoch:?EPOCH_BITS, RespData/binary>>,
           case srpc_lib:lib_key_create_validation_response(SrpData, LibKeyInfo,
-                                                                 ClientChallenge, ProRespData) of
+                                                           ClientChallenge, SrpcHttpRespData) of
             {ok, RespPacket} ->
               srpc_api_impl:put(lib_key, LibKeyId, LibKeyInfo),
               {ok, RespPacket};
@@ -69,19 +69,19 @@ register_user(LibKeyId, RegistrationRequest) ->
   case lib_key_data_for_id(LibKeyId) of
     {ok, LibKeyInfo} ->
       case srpc_lib:process_registration_request(LibKeyInfo, RegistrationRequest) of
-        {ok, {SrpUserData, ProReqData}} ->
-          case parse_http_req_data(ProReqData) of
+        {ok, {SrpUserData, SrpcHttpReqData}} ->
+          case parse_http_req_data(SrpcHttpReqData) of
             {ok, ReqData} ->
               SrpId = maps:get(srpId, SrpUserData),
               RespData = srpc_api_impl:registration_response_data(SrpId, ReqData),
-              ProData = <<>>,
-              ProRespData = create_http_resp_data(ProData, RespData),
+              SrpcHttpData = <<>>,
+              SrpcHttpRespData = create_http_resp_data(SrpcHttpData, RespData),
               case srpc_api_impl:get(srp_user, SrpId) of
                 undefined ->
                   srpc_api_impl:put(srp_user, SrpId, SrpUserData),
-                  srpc_lib:create_registration_response(ok, LibKeyInfo, ProRespData);
+                  srpc_lib:create_registration_response(ok, LibKeyInfo, SrpcHttpRespData);
                 {ok, _SrpUserData} ->
-                  srpc_lib:create_registration_response(duplicate, LibKeyInfo, ProRespData)
+                  srpc_lib:create_registration_response(duplicate, LibKeyInfo, SrpcHttpRespData)
               end;
             Error ->
               Error
@@ -97,16 +97,16 @@ user_key_exchange(LibKeyId, ExchangeRequest) ->
   case lib_key_data_for_id(LibKeyId) of
     {ok, LibKeyInfo} ->
       case srpc_lib:user_key_process_exchange_request(LibKeyInfo, ExchangeRequest) of
-        {ok, {SrpId, ClientPublicKey, ProReqData}} ->
-          case parse_http_req_data(ProReqData) of
+        {ok, {SrpId, ClientPublicKey, SrpcHttpReqData}} ->
+          case parse_http_req_data(SrpcHttpReqData) of
             {ok, ReqData} ->
               case srpc_api_impl:get(srp_user, SrpId) of
                 {ok, SrpUserData} ->
                   RespData = srpc_api_impl:user_key_exhange_data(SrpId, ReqData),
-                  ProData = <<>>,
-                  ProRespData = create_http_resp_data(ProData, RespData),
+                  SrpcHttpData = <<>>,
+                  SrpcHttpRespData = create_http_resp_data(SrpcHttpData, RespData),
                   case srpc_lib:user_key_create_exchange_response(LibKeyInfo, SrpUserData,
-                                                                  ClientPublicKey, ProRespData) of
+                                                                  ClientPublicKey, SrpcHttpRespData) of
                     {ok, {SrpData, RespPacket}} ->
                       UserKeyId = maps:get(keyId, SrpData),
                       srpc_api_impl:put(srp_data, UserKeyId, SrpData),
@@ -132,20 +132,20 @@ user_key_validate(LibKeyId, ValidationRequest) ->
   case lib_key_data_for_id(LibKeyId) of
     {ok, LibKeyInfo} ->
       case srpc_lib:user_key_process_validation_request(LibKeyInfo, ValidationRequest) of
-        {ok, {UserKeyId, ClientChallenge, ProReqData}} ->
+        {ok, {UserKeyId, ClientChallenge, SrpcHttpReqData}} ->
           case srpc_api_impl:get(srp_data, UserKeyId) of
             {ok, SrpData} ->
-              case parse_http_req_data(ProReqData) of
+              case parse_http_req_data(SrpcHttpReqData) of
                 {ok, ReqData} ->
                   SrpId = maps:get(entityId, SrpData),
                   RespData = srpc_api_impl:user_key_validation_data(SrpId, ReqData),
                   {Len, SessionId} = rand_session_id(),
-                  ProData = <<Len, SessionId/binary>>,
-                  ProRespData = create_http_resp_data(ProData, RespData),
+                  SrpcHttpData = <<Len, SessionId/binary>>,
+                  SrpcHttpRespData = create_http_resp_data(SrpcHttpData, RespData),
                   SrpData2 = maps:put(keyId, SessionId, SrpData),
                   case srpc_lib:user_key_create_validation_response(LibKeyInfo, SrpData2,
                                                                     ClientChallenge,
-                                                                    ProRespData) of
+                                                                    SrpcHttpRespData) of
                     {ok, UserKeyInfo, RespPacket} ->
                       maps:put(sessionId, SessionId, UserKeyInfo),
                       srpc_api_impl:put(user_key, SessionId, UserKeyInfo),
@@ -162,10 +162,10 @@ user_key_validate(LibKeyId, ValidationRequest) ->
               case UserKeyId of
                 LibId ->
                   {Len, SessionId} = rand_session_id(),
-                  ProData = <<Len, SessionId/binary>>,
-                  ProRespData = create_http_resp_data(ProData, <<>>),
+                  SrpcHttpData = <<Len, SessionId/binary>>,
+                  SrpcHttpRespData = create_http_resp_data(SrpcHttpData, <<>>),
                   srpc_lib:user_key_create_validation_response(LibKeyInfo, invalid,
-                                                               ClientChallenge, ProRespData);
+                                                               ClientChallenge, SrpcHttpRespData);
                 _ ->
                   {error, <<"No User Key data for UserKeyId: ", UserKeyId/binary>>}
               end
@@ -195,13 +195,13 @@ epoch(LibKeyId, Body) ->
   end.    
 
 encrypt_data(KeyInfo, RespData) ->
-  ProRespData = create_http_resp_data(<<>>, RespData),
-  srpc_lib:encrypt(KeyInfo, ProRespData).
+  SrpcHttpRespData = create_http_resp_data(<<>>, RespData),
+  srpc_lib:encrypt(KeyInfo, SrpcHttpRespData).
 
 decrypt_packet(KeyInfo, Packet) ->
   case srpc_lib:decrypt(KeyInfo, Packet) of
-    {ok, ProReqData} ->
-      parse_http_req_data(ProReqData);
+    {ok, SrpcHttpReqData} ->
+      parse_http_req_data(SrpcHttpReqData);
     Error ->
       Error
   end.
@@ -255,10 +255,10 @@ parse_http_req_data(<<?HTTP_VSN:?HTTP_VSN_BITS, DataEpoch:?EPOCH_BITS, ReqData/b
       {error, <<"Request data age is greater than tolerance">>}
   end;
 parse_http_req_data(<<_:?HTTP_VSN_BITS, _Rest/binary>>) ->
-  {error, <<"Invalid SRP Cryptor Pro version number">>};
+  {error, <<"Invalid Srpc Http version number">>};
 parse_http_req_data(_HttpReqData) ->
-  {error, <<"Invalid pro request data">>}.
+  {error, <<"Invalid HTTP request data">>}.
 
-create_http_resp_data(ProData, RespData) ->
+create_http_resp_data(SrpcHttpData, RespData) ->
   Epoch = erlang:system_time(seconds),
-  << ?HTTP_VSN:8, Epoch:?EPOCH_BITS, ProData/binary, RespData/binary >>.
+  << ?HTTP_VSN:8, Epoch:?EPOCH_BITS, SrpcHttpData/binary, RespData/binary >>.

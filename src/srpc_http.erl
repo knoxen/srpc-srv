@@ -15,9 +15,9 @@
 
 -define(APP_NAME, srpc_http).
 
--define(SRPC_HTTP_VSN,       1).
--define(SRPC_HTTP_VSN_BITS,  8).
--define(EPOCH_BITS,         32).
+-define(DATA_HDR_VSN,   1).
+-define(DATA_HDR_BITS,  8).
+-define(EPOCH_BITS,    32).
 
 %%====================================================================
 %% API functions
@@ -44,10 +44,8 @@ lib_key_validate(LibKeyId, ValidationRequest) ->
       case srpc_lib:lib_key_process_validation_request(SrpData, ValidationRequest) of
         {ok, {LibKeyInfo, ClientChallenge, ReqData}} ->
           RespData = srpc_api_impl:lib_key_validation_data(ReqData),
-          DataEpoch = erlang:system_time(seconds),
-          SrpcHttpRespData = <<DataEpoch:?EPOCH_BITS, RespData/binary>>,
           case srpc_lib:lib_key_create_validation_response(SrpData, LibKeyInfo,
-                                                           ClientChallenge, SrpcHttpRespData) of
+                                                           ClientChallenge, RespData) of
             {ok, RespPacket} ->
               srpc_api_impl:put(lib_key, LibKeyId, LibKeyInfo),
               {ok, RespPacket};
@@ -69,12 +67,12 @@ register_user(LibKeyId, RegistrationRequest) ->
     {ok, LibKeyInfo} ->
       case srpc_lib:process_registration_request(LibKeyInfo, RegistrationRequest) of
         {ok, {SrpUserData, SrpcHttpReqData}} ->
-          case parse_http_req_data(SrpcHttpReqData) of
+          case parse_req_data(SrpcHttpReqData) of
             {ok, ReqData} ->
               SrpId = maps:get(srpId, SrpUserData),
               RespData = srpc_api_impl:registration_response_data(SrpId, ReqData),
               SrpcHttpData = <<>>,
-              SrpcHttpRespData = create_http_resp_data(SrpcHttpData, RespData),
+              SrpcHttpRespData = create_resp_data(SrpcHttpData, RespData),
               case srpc_api_impl:get(srp_user, SrpId) of
                 undefined ->
                   srpc_api_impl:put(srp_user, SrpId, SrpUserData),
@@ -97,15 +95,17 @@ user_key_exchange(LibKeyId, ExchangeRequest) ->
     {ok, LibKeyInfo} ->
       case srpc_lib:user_key_process_exchange_request(LibKeyInfo, ExchangeRequest) of
         {ok, {SrpId, ClientPublicKey, SrpcHttpReqData}} ->
-          case parse_http_req_data(SrpcHttpReqData) of
+          case parse_req_data(SrpcHttpReqData) of
             {ok, ReqData} ->
               case srpc_api_impl:get(srp_user, SrpId) of
                 {ok, SrpUserData} ->
                   RespData = srpc_api_impl:user_key_exhange_data(SrpId, ReqData),
                   SrpcHttpData = <<>>,
-                  SrpcHttpRespData = create_http_resp_data(SrpcHttpData, RespData),
-                  case srpc_lib:user_key_create_exchange_response(LibKeyInfo, SrpUserData,
-                                                                  ClientPublicKey, SrpcHttpRespData) of
+                  SrpcHttpRespData = create_resp_data(SrpcHttpData, RespData),
+                  case srpc_lib:user_key_create_exchange_response(LibKeyInfo,
+                                                                  SrpUserData,
+                                                                  ClientPublicKey, 
+                                                                  SrpcHttpRespData) of
                     {ok, {SrpData, RespPacket}} ->
                       UserKeyId = maps:get(keyId, SrpData),
                       srpc_api_impl:put(srp_data, UserKeyId, SrpData),
@@ -134,13 +134,13 @@ user_key_validate(LibKeyId, ValidationRequest) ->
         {ok, {UserKeyId, ClientChallenge, SrpcHttpReqData}} ->
           case srpc_api_impl:get(srp_data, UserKeyId) of
             {ok, SrpData} ->
-              case parse_http_req_data(SrpcHttpReqData) of
+              case parse_req_data(SrpcHttpReqData) of
                 {ok, ReqData} ->
                   SrpId = maps:get(entityId, SrpData),
                   RespData = srpc_api_impl:user_key_validation_data(SrpId, ReqData),
                   {Len, SessionId} = rand_session_id(),
                   SrpcHttpData = <<Len, SessionId/binary>>,
-                  SrpcHttpRespData = create_http_resp_data(SrpcHttpData, RespData),
+                  SrpcHttpRespData = create_resp_data(SrpcHttpData, RespData),
                   SrpData2 = maps:put(keyId, SessionId, SrpData),
                   case srpc_lib:user_key_create_validation_response(LibKeyInfo, SrpData2,
                                                                     ClientChallenge,
@@ -162,7 +162,7 @@ user_key_validate(LibKeyId, ValidationRequest) ->
                 LibId ->
                   {Len, SessionId} = rand_session_id(),
                   SrpcHttpData = <<Len, SessionId/binary>>,
-                  SrpcHttpRespData = create_http_resp_data(SrpcHttpData, <<>>),
+                  SrpcHttpRespData = create_resp_data(SrpcHttpData, <<>>),
                   srpc_lib:user_key_create_validation_response(LibKeyInfo, invalid,
                                                                ClientChallenge, SrpcHttpRespData);
                 _ ->
@@ -194,14 +194,13 @@ server_epoch(LibKeyId, Body) ->
   end.    
 
 encrypt_data(KeyInfo, RespData) ->
-  SrpcHttpRespData = create_http_resp_data(<<>>, RespData),
+  SrpcHttpRespData = create_resp_data(<<>>, RespData),
   srpc_lib:encrypt(KeyInfo, SrpcHttpRespData).
 
 decrypt_packet(KeyInfo, Packet) ->
   case srpc_lib:decrypt(KeyInfo, Packet) of
     {ok, SrpcHttpReqData} ->
-      io:format("~p Decrypt SrpcHttpReqData~n~p~n", [?MODULE, SrpcHttpReqData]),
-      parse_http_req_data(SrpcHttpReqData);
+      parse_req_data(SrpcHttpReqData);
     Error ->
       Error
   end.
@@ -244,8 +243,11 @@ rand_session_id() ->
     end,
   {SidLen, srpc_util:rand_id(SidLen)}.
 
-parse_http_req_data(<<?SRPC_HTTP_VSN:?SRPC_HTTP_VSN_BITS, 
-                      DataEpoch:?EPOCH_BITS, ReqData/binary>>) ->
+parse_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, DataEpoch:?EPOCH_BITS, ReqData/binary>>) ->
+
+  TmpEpoch = erlang:system_time(seconds),
+  io:format("~p~nDataEpoch: ~p~n TmpEpoch: ~p~n", [?MODULE, DataEpoch, TmpEpoch]),
+
   Tolerance = req_age_tolerance(),
   ReqEpoch = erlang:system_time(seconds),
   case (ReqEpoch - DataEpoch) < Tolerance of
@@ -254,11 +256,11 @@ parse_http_req_data(<<?SRPC_HTTP_VSN:?SRPC_HTTP_VSN_BITS,
     false ->
       {error, <<"Request data age is greater than tolerance">>}
   end;
-parse_http_req_data(<<_:?SRPC_HTTP_VSN_BITS, _Rest/binary>>) ->
+parse_req_data(<<_:?DATA_HDR_BITS, _Rest/binary>>) ->
   {error, <<"Invalid Srpc Http version number">>};
-parse_http_req_data(_HttpReqData) ->
+parse_req_data(_HttpReqData) ->
   {error, <<"Invalid HTTP request data">>}.
 
-create_http_resp_data(SrpcHttpData, RespData) ->
-  RespEpoch = erlang:system_time(seconds),
-  << ?SRPC_HTTP_VSN:8, RespEpoch:?EPOCH_BITS, SrpcHttpData/binary, RespData/binary >>.
+create_resp_data(SrpcHttpData, RespData) ->
+  ServerEpoch = erlang:system_time(seconds),
+  << ?DATA_HDR_VSN:?DATA_HDR_BITS, ServerEpoch:?EPOCH_BITS, SrpcHttpData/binary, RespData/binary >>.

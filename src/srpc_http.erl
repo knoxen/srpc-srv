@@ -8,9 +8,9 @@
         ,register_user/2
         ,user_key_exchange/2
         ,user_key_validate/2
-        ,encrypt_data/2
-        ,decrypt_packet/2 
         ,server_epoch/2
+        ,encrypt_data/2
+        ,decrypt_data/2 
         ]).
 
 -define(APP_NAME, srpc_http).
@@ -67,7 +67,7 @@ register_user(LibKeyId, RegistrationRequest) ->
     {ok, LibKeyInfo} ->
       case srpc_lib:process_registration_request(LibKeyInfo, RegistrationRequest) of
         {ok, {SrpUserData, SrpcHttpReqData}} ->
-          case parse_req_data(SrpcHttpReqData) of
+          case process_req_data(SrpcHttpReqData) of
             {ok, ReqData} ->
               SrpId = maps:get(srpId, SrpUserData),
               RespData = srpc_api_impl:registration_response_data(SrpId, ReqData),
@@ -95,7 +95,7 @@ user_key_exchange(LibKeyId, ExchangeRequest) ->
     {ok, LibKeyInfo} ->
       case srpc_lib:user_key_process_exchange_request(LibKeyInfo, ExchangeRequest) of
         {ok, {SrpId, ClientPublicKey, SrpcHttpReqData}} ->
-          case parse_req_data(SrpcHttpReqData) of
+          case process_req_data(SrpcHttpReqData) of
             {ok, ReqData} ->
               case srpc_api_impl:get(srp_user, SrpId) of
                 {ok, SrpUserData} ->
@@ -134,7 +134,7 @@ user_key_validate(LibKeyId, ValidationRequest) ->
         {ok, {UserKeyId, ClientChallenge, SrpcHttpReqData}} ->
           case srpc_api_impl:get(srp_data, UserKeyId) of
             {ok, SrpData} ->
-              case parse_req_data(SrpcHttpReqData) of
+              case process_req_data(SrpcHttpReqData) of
                 {ok, ReqData} ->
                   SrpId = maps:get(entityId, SrpData),
                   RespData = srpc_api_impl:user_key_validation_data(SrpId, ReqData),
@@ -193,14 +193,14 @@ server_epoch(LibKeyId, Body) ->
       Error
   end.    
 
-encrypt_data(KeyInfo, RespData) ->
-  SrpcHttpRespData = create_resp_data(<<>>, RespData),
+encrypt_data(KeyInfo, ResponseData) ->
+  SrpcHttpRespData = create_resp_data(<<>>, ResponseData),
   srpc_lib:encrypt(KeyInfo, SrpcHttpRespData).
 
-decrypt_packet(KeyInfo, Packet) ->
-  case srpc_lib:decrypt(KeyInfo, Packet) of
+decrypt_data(KeyInfo, RequestData) ->
+  case srpc_lib:decrypt(KeyInfo, RequestData) of
     {ok, SrpcHttpReqData} ->
-      parse_req_data(SrpcHttpReqData);
+      process_req_data(SrpcHttpReqData);
     Error ->
       Error
   end.
@@ -243,22 +243,18 @@ rand_session_id() ->
     end,
   {SidLen, srpc_util:rand_id(SidLen)}.
 
-parse_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, DataEpoch:?EPOCH_BITS, ReqData/binary>>) ->
-
-  TmpEpoch = erlang:system_time(seconds),
-  io:format("~p~nDataEpoch: ~p~n TmpEpoch: ~p~n", [?MODULE, DataEpoch, TmpEpoch]),
-
+process_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, DataEpoch:?EPOCH_BITS, ReqData/binary>>) ->
   Tolerance = req_age_tolerance(),
   ReqEpoch = erlang:system_time(seconds),
-  case (ReqEpoch - DataEpoch) < Tolerance of
+  case abs(ReqEpoch - DataEpoch) =< Tolerance of
     true ->
       {ok, ReqData};
     false ->
       {error, <<"Request data age is greater than tolerance">>}
   end;
-parse_req_data(<<_:?DATA_HDR_BITS, _Rest/binary>>) ->
+process_req_data(<<_:?DATA_HDR_BITS, _Rest/binary>>) ->
   {error, <<"Invalid Srpc Http version number">>};
-parse_req_data(_HttpReqData) ->
+process_req_data(_HttpReqData) ->
   {error, <<"Invalid HTTP request data">>}.
 
 create_resp_data(SrpcHttpData, RespData) ->

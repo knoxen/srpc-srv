@@ -157,9 +157,9 @@ user_key_validate(LibKeyId, ValidationRequest) ->
                   Error
               end;
             undefined ->
-              LibId = srpc_lib:lib_id(),
+              SrpcId = srpc_lib:srpc_id(),
               case UserKeyId of
-                LibId ->
+                SrpcId ->
                   {Len, SessionId} = rand_session_id(),
                   SrpcHttpData = <<Len, SessionId/binary>>,
                   SrpcHttpRespData = create_resp_data(SrpcHttpData, <<>>),

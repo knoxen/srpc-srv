@@ -22,12 +22,12 @@
 %%
 %% Registration Codes
 %%
--define(SRPC_REGISTRATION_CREATE,     1).
--define(SRPC_REGISTRATION_UPDATE,     2).
--define(SRPC_REGISTRATION_OK,        10).
--define(SRPC_REGISTRATION_DUP,       11).
--define(SRPC_REGISTRATION_NOT_FOUND, 12).
--define(SRPC_REGISTRATION_ERROR,     99).
+-define(SRPC_REGISTRATION_CREATE,      1).
+-define(SRPC_REGISTRATION_UPDATE,      2).
+-define(SRPC_REGISTRATION_OK,         10).
+-define(SRPC_REGISTRATION_DUP,        11).
+-define(SRPC_REGISTRATION_NOT_FOUND,  12).
+-define(SRPC_REGISTRATION_ERROR,     255).
 
 %%====================================================================
 %% API functions
@@ -104,7 +104,7 @@ user_registration(LibKeyId, RegistrationRequest) ->
                                                             SrpcHttpRespData);
                     undefined ->
                       srpc_lib:create_registration_response(LibKeyInfo,
-                                                            ?SRPC_REGISTRATION_DUP,
+                                                            ?SRPC_REGISTRATION_NOT_FOUND,
                                                             SrpcHttpRespData)
                   end;
                 _ ->
@@ -290,8 +290,5 @@ parse_req_data(_HttpReqData) ->
   {error, <<"Invalid HTTP request data">>}.
 
 create_resp_data(SrpcHttpData, RespData) ->
-  io:format("~p SrpcHttpData: ~p~nRespData: ~p~n", [?MODULE, SrpcHttpData, RespData]),
-  
-
   ServerEpoch = erlang:system_time(seconds),
   << ?DATA_HDR_VSN:?DATA_HDR_BITS, ServerEpoch:?EPOCH_BITS, SrpcHttpData/binary, RespData/binary >>.

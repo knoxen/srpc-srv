@@ -77,16 +77,16 @@ user_registration(LibKeyId, RegistrationRequest) ->
     {ok, LibKeyInfo} ->
       case srpc_lib:process_registration_request(LibKeyInfo, RegistrationRequest) of
         {ok, {RegistrationCode, SrpUserData, SrpcHttpReqData}} ->
-          SrpId = maps:get(srpId, SrpUserData),
+          UserId = maps:get(srpId, SrpUserData),
           case parse_req_data(SrpcHttpReqData) of
             {ok, ReqData} ->
-              RespData = srpc_app_hook:registration_data(SrpId, ReqData),
+              RespData = srpc_app_hook:registration_data(UserId, ReqData),
               SrpcHttpRespData = create_resp_data(<<>>, RespData),
               case RegistrationCode of
                 ?SRPC_REGISTRATION_CREATE ->
-                  case srpc_app_hook:get(srp_user, SrpId) of
+                  case srpc_app_hook:get(srp_user, UserId) of
                     undefined ->
-                      srpc_app_hook:put(srp_user, SrpId, SrpUserData),
+                      srpc_app_hook:put(srp_user, UserId, SrpUserData),
                       srpc_lib:create_registration_response(LibKeyInfo,
                                                             ?SRPC_REGISTRATION_OK,
                                                             SrpcHttpRespData);
@@ -96,9 +96,9 @@ user_registration(LibKeyId, RegistrationRequest) ->
                                                             SrpcHttpRespData)
                   end;
                 ?SRPC_REGISTRATION_UPDATE ->
-                  case srpc_app_hook:get(srp_user, SrpId) of
+                  case srpc_app_hook:get(srp_user, UserId) of
                     {ok, _SrpUserData} ->
-                      srpc_app_hook:put(srp_user, SrpId, SrpUserData),
+                      srpc_app_hook:put(srp_user, UserId, SrpUserData),
                       srpc_lib:create_registration_response(LibKeyInfo,
                                                             ?SRPC_REGISTRATION_OK,
                                                             SrpcHttpRespData);
@@ -123,17 +123,30 @@ user_registration(LibKeyId, RegistrationRequest) ->
   end.
 
 user_key_exchange(LibKeyId, ExchangeRequest) ->
+  io:format("~p user_key_exchange~n", [?MODULE]),
+
   case lib_key_data_for_id(LibKeyId) of
     {ok, LibKeyInfo} ->
       case srpc_lib:user_key_process_exchange_request(LibKeyInfo, ExchangeRequest) of
-        {ok, {SrpId, ClientPublicKey, SrpcHttpReqData}} ->
+        {ok, {UserId, ClientPublicKey, SrpcHttpReqData}} ->
+          io:format("  UserId: ~p~n", [UserId]),
+          io:format("  SrpcHttpReqData: ~p~n", [srpc_util:bin_to_hex(SrpcHttpReqData)]),
           case parse_req_data(SrpcHttpReqData) of
             {ok, ReqData} ->
-              case srpc_app_hook:get(srp_user, SrpId) of
+              io:format("  parse exchange data~n"),
+
+              case srpc_app_hook:get(srp_user, UserId) of
                 {ok, SrpUserData} ->
-                  RespData = srpc_app_hook:user_key_exhange_data(SrpId, ReqData),
+                  io:format("  got exchange user info~n"),
+
+                  RespData = srpc_app_hook:user_key_exchange_data(UserId, ReqData),
+                  io:format("  RespData~p~n", [RespData]),
+
+
                   SrpcHttpData = <<>>,
                   SrpcHttpRespData = create_resp_data(SrpcHttpData, RespData),
+
+                  io:format("  SrpcHttpRespData~p~n", [SrpcHttpRespData]),
                   case srpc_lib:user_key_create_exchange_response(LibKeyInfo,
                                                                   SrpUserData,
                                                                   ClientPublicKey, 
@@ -147,7 +160,7 @@ user_key_exchange(LibKeyId, ExchangeRequest) ->
                   end;
                 undefined ->
                   srpc_lib:user_key_create_exchange_response(LibKeyInfo, invalid, 
-                                                             ClientPublicKey, SrpId)
+                                                             ClientPublicKey, UserId)
               end;
             Error ->
               Error
@@ -168,8 +181,8 @@ user_key_validate(LibKeyId, ValidationRequest) ->
             {ok, SrpData} ->
               case parse_req_data(SrpcHttpReqData) of
                 {ok, ReqData} ->
-                  SrpId = maps:get(entityId, SrpData),
-                  RespData = srpc_app_hook:user_key_validation_data(SrpId, ReqData),
+                  UserId = maps:get(entityId, SrpData),
+                  RespData = srpc_app_hook:user_key_validation_data(UserId, ReqData),
                   {Len, SessionId} = rand_session_id(),
                   SrpcHttpData = <<Len, SessionId/binary>>,
                   SrpcHttpRespData = create_resp_data(SrpcHttpData, RespData),

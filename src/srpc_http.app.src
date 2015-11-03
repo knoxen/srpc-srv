@@ -8,8 +8,7 @@
     ,sasl
     ]}
  ,{env,
-   [{sid_len,           24}
-   ,{login_id_len,      12}
+   [{key_id_len,        24}
    ,{req_age_tolerance, 30}
    ]}
  ,{modules, []}

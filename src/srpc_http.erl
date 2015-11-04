@@ -96,10 +96,10 @@ lib_key_validate(KeyId, ValidationRequest) ->
 %%================================================================================================
 user_registration(KeyId, RegistrationRequest) ->
   case key_map_for_id(KeyId) of
-    {ok, KeyInfo} ->
-      case srpc_lib:process_registration_request(KeyInfo, RegistrationRequest) of
-        {ok, {RegistrationCode, SrpUserData, SrpcHttpReqData}} ->
-          UserId = maps:get(srpId, SrpUserData),
+    {ok, KeyMap} ->
+      case srpc_lib:process_registration_request(KeyMap, RegistrationRequest) of
+        {ok, {RegistrationCode, SrpcUserData, SrpcHttpReqData}} ->
+          UserId = maps:get(userId, SrpcUserData),
           case parse_req_data(SrpcHttpReqData) of
             {ok, ReqRegistrationData} ->
               RespRegistrationData = srpc_app_hook:registration_data(UserId, ReqRegistrationData),
@@ -108,29 +108,29 @@ user_registration(KeyId, RegistrationRequest) ->
                 ?SRPC_REGISTRATION_CREATE ->
                   case srpc_app_hook:get(srpc_user, UserId) of
                     undefined ->
-                      srpc_app_hook:put(srpc_user, UserId, SrpUserData),
-                      srpc_lib:create_registration_response(KeyInfo,
+                      srpc_app_hook:put(srpc_user, UserId, SrpcUserData),
+                      srpc_lib:create_registration_response(KeyMap,
                                                             ?SRPC_REGISTRATION_OK,
                                                             SrpcHttpRespData);
-                    {ok, _SrpUserData} ->
-                      srpc_lib:create_registration_response(KeyInfo,
+                    {ok, _SrpcUserData} ->
+                      srpc_lib:create_registration_response(KeyMap,
                                                             ?SRPC_REGISTRATION_DUP,
                                                             SrpcHttpRespData)
                   end;
                 ?SRPC_REGISTRATION_UPDATE ->
                   case srpc_app_hook:get(srpc_user, UserId) of
-                    {ok, _SrpUserData} ->
-                      srpc_app_hook:put(srpc_user, UserId, SrpUserData),
-                      srpc_lib:create_registration_response(KeyInfo,
+                    {ok, _SrpcUserData} ->
+                      srpc_app_hook:put(srpc_user, UserId, SrpcUserData),
+                      srpc_lib:create_registration_response(KeyMap,
                                                             ?SRPC_REGISTRATION_OK,
                                                             SrpcHttpRespData);
                     undefined ->
-                      srpc_lib:create_registration_response(KeyInfo,
+                      srpc_lib:create_registration_response(KeyMap,
                                                             ?SRPC_REGISTRATION_NOT_FOUND,
                                                             SrpcHttpRespData)
                   end;
                 _ ->
-                  srpc_lib:create_registration_response(KeyInfo,
+                  srpc_lib:create_registration_response(KeyMap,
                                                         ?SRPC_REGISTRATION_ERROR,
                                                         SrpcHttpRespData)
               end;
@@ -149,33 +149,32 @@ user_registration(KeyId, RegistrationRequest) ->
 %% User Key Agreement
 %%
 %%================================================================================================
-user_key_exchange(KeyId, ExchangeRequest) ->
-  case key_map_for_id(KeyId) of
-    {ok, KeyMap} ->
-      case srpc_lib:user_key_process_exchange_request(KeyMap, ExchangeRequest) of
+user_key_exchange(CryptKeyId, ExchangeRequest) ->
+  case key_map_for_id(CryptKeyId) of
+    {ok, CryptKeyMap} ->
+      case srpc_lib:user_key_process_exchange_request(CryptKeyMap, ExchangeRequest) of
         {ok, {UserId, ClientPublicKey, SrpcHttpReqData}} ->
           case parse_req_data(SrpcHttpReqData) of
             {ok, ReqExchangeData} ->
               case srpc_app_hook:get(srpc_user, UserId) of
-                {ok, SrpUserData} ->
+                {ok, SrpcUserData} ->
                   RespExchangeData = srpc_app_hook:user_key_exchange_data(UserId, ReqExchangeData),
 
                   SrpcHttpData = <<>>,
                   SrpcHttpRespData = create_resp_data(SrpcHttpData, RespExchangeData),
-
-                  case srpc_lib:user_key_create_exchange_response(KeyMap,
-                                                                  SrpUserData,
+                  case srpc_lib:user_key_create_exchange_response(CryptKeyMap,
+                                                                  SrpcUserData,
                                                                   ClientPublicKey, 
                                                                   SrpcHttpRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->
-                      KeyId = maps:get(keyId, ExchangeMap),
-                      srpc_app_hook:put(exchange_info, KeyId, ExchangeMap),
+                      ExchangeKeyId = maps:get(keyId, ExchangeMap),
+                      srpc_app_hook:put(exchange_info, ExchangeKeyId, ExchangeMap),
                       {ok, ExchangeResponse};
                     Error ->
                       Error
                   end;
                 undefined ->
-                  srpc_lib:user_key_create_exchange_response(KeyMap, invalid, 
+                  srpc_lib:user_key_create_exchange_response(CryptKeyMap, invalid, 
                                                              ClientPublicKey, UserId)
               end;
             Error ->

@@ -16,6 +16,7 @@
         ,encrypt_data/2
         ,decrypt_data/2
         ,key_map_for_key_id/1
+        ,key_invalidate/2
         ]).
 
 -define(APP_NAME, srpc_http).
@@ -203,11 +204,6 @@ user_key_validate(CryptKeyId, ValidationRequest) ->
     {ok, CryptKeyMap} ->
       case srpc_lib:user_key_process_validation_request(CryptKeyMap, ValidationRequest) of
         {ok, {UserKeyId, ClientChallenge, SrpcHttpReqValidationData}} ->
-
-          %% io:format("~p user_key_validate ~n", [?MODULE]),
-          %% io:format("   Crypt KeyId: ~p~n", [CryptKeyId]),
-          %% io:format("   User KeyId:  ~p~n", [UserKeyId]),
-
           case srpc_app_hook:get(exchange_info, UserKeyId) of
             {ok, ExchangeMap} ->
               case parse_req_data(SrpcHttpReqValidationData) of
@@ -243,13 +239,36 @@ user_key_validate(CryptKeyId, ValidationRequest) ->
 
 %%================================================================================================
 %%
+%% Key Invalidate
+%%
+%%================================================================================================
+key_invalidate(KeyId, InvalidateRequest) ->
+  case key_map_for_key_id(KeyId) of
+    {ok, KeyMap} ->
+      EntityId = maps:get(entityId, KeyMap),
+      case decrypt_data(KeyMap, InvalidateRequest) of
+        {ok, EntityId} ->
+          KeyType = maps:get(keyType, KeyMap),
+          srpc_app_hook:delete(KeyType, KeyId),
+          encrypt_data(KeyMap, EntityId);
+        {ok, _EntityId} ->
+          {error, <<"Invalidate KeyId using invalid entityId">>};
+        Error ->
+          Error
+      end;
+    Error ->
+      Error
+  end.
+
+%%================================================================================================
+%%
 %% Server Epoch
 %%
 %%================================================================================================
-server_epoch(KeyId, Body) ->
+server_epoch(KeyId, ServerEpochRequest) ->
   case key_map_for_key_id(KeyId) of
     {ok, KeyMap} ->
-      case srpc_encryptor:decrypt(KeyMap, Body) of
+      case srpc_encryptor:decrypt(KeyMap, ServerEpochRequest) of
         {ok, <<RandomStamp/binary>>} ->
           DataEpoch = erlang:system_time(seconds),
           RespData = <<DataEpoch:?EPOCH_BITS, RandomStamp/binary>>,

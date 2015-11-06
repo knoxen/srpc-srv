@@ -1,4 +1,4 @@
--module(srpc_http).
+-module(srpc_srv).
 
 -author("paul@knoxen.com").
 
@@ -19,7 +19,7 @@
         ,key_invalidate/2
         ]).
 
--define(APP_NAME, srpc_http).
+-define(APP_NAME, srpc_srv).
 
 -define(DATA_HDR_VSN,   1).
 -define(DATA_HDR_BITS,  8).

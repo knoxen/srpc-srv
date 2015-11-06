@@ -1,4 +1,4 @@
-srpcryptor
+srpc_srv
 =====
 
 An OTP library

@@ -100,12 +100,12 @@ user_registration(KeyId, RegistrationRequest) ->
   case key_map_for_key_id(KeyId) of
     {ok, KeyMap} ->
       case srpc_lib:process_registration_request(KeyMap, RegistrationRequest) of
-        {ok, {RegistrationCode, SrpcUserData, SrpcHttpReqData}} ->
+        {ok, {RegistrationCode, SrpcUserData, SrpcReqData}} ->
           UserId = maps:get(userId, SrpcUserData),
-          case parse_req_data(SrpcHttpReqData) of
+          case parse_req_data(SrpcReqData) of
             {ok, ReqRegistrationData} ->
               RespRegistrationData = srpc_app_hook:registration_data(UserId, ReqRegistrationData),
-              SrpcHttpRespData = create_resp_data(<<>>, RespRegistrationData),
+              SrpcRespData = create_resp_data(<<>>, RespRegistrationData),
               case RegistrationCode of
                 ?SRPC_REGISTRATION_CREATE ->
                   case srpc_app_hook:get(srpc_user, UserId) of
@@ -113,11 +113,11 @@ user_registration(KeyId, RegistrationRequest) ->
                       srpc_app_hook:put(srpc_user, UserId, SrpcUserData),
                       srpc_lib:create_registration_response(KeyMap,
                                                             ?SRPC_REGISTRATION_OK,
-                                                            SrpcHttpRespData);
+                                                            SrpcRespData);
                     {ok, _SrpcUserData} ->
                       srpc_lib:create_registration_response(KeyMap,
                                                             ?SRPC_REGISTRATION_DUP,
-                                                            SrpcHttpRespData)
+                                                            SrpcRespData)
                   end;
                 ?SRPC_REGISTRATION_UPDATE ->
                   case srpc_app_hook:get(srpc_user, UserId) of
@@ -125,16 +125,16 @@ user_registration(KeyId, RegistrationRequest) ->
                       srpc_app_hook:put(srpc_user, UserId, SrpcUserData),
                       srpc_lib:create_registration_response(KeyMap,
                                                             ?SRPC_REGISTRATION_OK,
-                                                            SrpcHttpRespData);
+                                                            SrpcRespData);
                     undefined ->
                       srpc_lib:create_registration_response(KeyMap,
                                                             ?SRPC_REGISTRATION_NOT_FOUND,
-                                                            SrpcHttpRespData)
+                                                            SrpcRespData)
                   end;
                 _ ->
                   srpc_lib:create_registration_response(KeyMap,
                                                         ?SRPC_REGISTRATION_ERROR,
-                                                        SrpcHttpRespData)
+                                                        SrpcRespData)
               end;
             Error ->
               Error
@@ -160,19 +160,19 @@ user_key_exchange(CryptKeyId, ExchangeRequest) ->
   case key_map_for_key_id(CryptKeyId) of
     {ok, CryptKeyMap} ->
       case srpc_lib:user_key_process_exchange_request(CryptKeyMap, ExchangeRequest) of
-        {ok, {UserId, ClientPublicKey, SrpcHttpReqData}} ->
-          case parse_req_data(SrpcHttpReqData) of
+        {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
+          case parse_req_data(SrpcReqData) of
             {ok, ReqExchangeData} ->
               case srpc_app_hook:get(srpc_user, UserId) of
                 {ok, SrpcUserData} ->
                   RespExchangeData = srpc_app_hook:user_key_exchange_data(UserId, ReqExchangeData),
 
-                  SrpcHttpData = <<>>,
-                  SrpcHttpRespData = create_resp_data(SrpcHttpData, RespExchangeData),
+                  SrpcData = <<>>,
+                  SrpcRespData = create_resp_data(SrpcData, RespExchangeData),
                   case srpc_lib:user_key_create_exchange_response(CryptKeyMap,
                                                                   SrpcUserData,
                                                                   ClientPublicKey, 
-                                                                  SrpcHttpRespData) of
+                                                                  SrpcRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->
                       ExchangeKeyId = maps:get(keyId, ExchangeMap),
                       srpc_app_hook:put(exchange_info, ExchangeKeyId, ExchangeMap),
@@ -203,18 +203,18 @@ user_key_validate(CryptKeyId, ValidationRequest) ->
   case key_map_for_key_id(CryptKeyId) of
     {ok, CryptKeyMap} ->
       case srpc_lib:user_key_process_validation_request(CryptKeyMap, ValidationRequest) of
-        {ok, {UserKeyId, ClientChallenge, SrpcHttpReqValidationData}} ->
+        {ok, {UserKeyId, ClientChallenge, SrpcReqValidationData}} ->
           case srpc_app_hook:get(exchange_info, UserKeyId) of
             {ok, ExchangeMap} ->
-              case parse_req_data(SrpcHttpReqValidationData) of
+              case parse_req_data(SrpcReqValidationData) of
                 {ok, ReqValidationData} ->
                   UserId = maps:get(entityId, ExchangeMap),
                   RespValidationData = 
                     srpc_app_hook:user_key_validation_data(UserId, ReqValidationData),
-                  SrpcHttpRespData = create_resp_data(<<>>, RespValidationData),
+                  SrpcRespData = create_resp_data(<<>>, RespValidationData),
                   case srpc_lib:user_key_create_validation_response(CryptKeyMap, ExchangeMap,
                                                                     ClientChallenge,
-                                                                    SrpcHttpRespData) of
+                                                                    SrpcRespData) of
                     {ok, KeyMap, ValidationResponse} ->
                       srpc_app_hook:put(user_key, UserKeyId, maps:put(keyId, UserKeyId, KeyMap)),
                       {ok, ValidationResponse};
@@ -226,10 +226,10 @@ user_key_validate(CryptKeyId, ValidationRequest) ->
                   Error
               end;
             undefined ->
-              SrpcHttpRespData = create_resp_data(<<>>, <<>>),
+              SrpcRespData = create_resp_data(<<>>, <<>>),
               {_, _KeyMap, ValidationResponse} =
                 srpc_lib:user_key_create_validation_response(CryptKeyMap, invalid,
-                                                             ClientChallenge, SrpcHttpRespData),
+                                                             ClientChallenge, SrpcRespData),
               {ok, ValidationResponse}
           end
       end;
@@ -312,13 +312,13 @@ key_map_for_key_id(KeyId) ->
 %%
 %%================================================================================================
 encrypt_data(KeyMap, Data) ->
-  SrpcHttpData = create_resp_data(<<>>, Data),
-  srpc_lib:encrypt(KeyMap, SrpcHttpData).
+  SrpcData = create_resp_data(<<>>, Data),
+  srpc_lib:encrypt(KeyMap, SrpcData).
 
 decrypt_data(KeyMap, Data) ->
   case srpc_lib:decrypt(KeyMap, Data) of
-    {ok, SrpcHttpData} ->
-      parse_req_data(SrpcHttpData);
+    {ok, SrpcData} ->
+      parse_req_data(SrpcData);
     Error ->
       Error
   end.
@@ -357,15 +357,15 @@ parse_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, DataEpoch:?EPOCH_BITS, ReqData/bi
       {error, <<"Request data age is greater than tolerance">>}
   end;
 parse_req_data(<<_:?DATA_HDR_BITS, _Rest/binary>>) ->
-  {error, <<"Invalid Srpc Http version number">>};
-parse_req_data(_HttpReqData) ->
-  {error, <<"Invalid HTTP request data">>}.
+  {error, <<"Invalid Srpc data version number">>};
+parse_req_data(_SrpcReqData) ->
+  {error, <<"Invalid Srpc request data">>}.
 
 %%------------------------------------------------------------------------------------------------
 %%
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-create_resp_data(SrpcHttpData, RespData) ->
+create_resp_data(SrpcData, RespData) ->
   ServerEpoch = erlang:system_time(seconds),
-  << ?DATA_HDR_VSN:?DATA_HDR_BITS, ServerEpoch:?EPOCH_BITS, SrpcHttpData/binary, RespData/binary >>.
+  << ?DATA_HDR_VSN:?DATA_HDR_BITS, ServerEpoch:?EPOCH_BITS, SrpcData/binary, RespData/binary >>.

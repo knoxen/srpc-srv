@@ -15,8 +15,8 @@
         ,server_epoch/2
         ,encrypt_data/2
         ,decrypt_data/2
-        ,key_map_for_key_id/1
-        ,key_invalidate/2
+        ,client_map_for_id/1
+        ,client_invalidate/2
         ]).
 
 -define(APP_NAME, srpc_srv).
@@ -39,22 +39,22 @@
 
 %%================================================================================================
 %%
-%% Lib Key Agreement
+%% Lib Client Key Agreement
 %%
 %%================================================================================================
 %%------------------------------------------------------------------------------------------------
 %%
-%%   Lib Key Exchange
+%%   Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
 lib_key_exchange(ExchangeRequest) ->
-  case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of 
+  case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of
     {ok, {ClientPublicKey, ReqExchangeData}} ->
       RespExchangeData = srpc_app_hook:lib_key_exchange_data(ReqExchangeData),
       case srpc_lib:lib_key_create_exchange_response(ClientPublicKey, RespExchangeData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
-          KeyId = maps:get(keyId, ExchangeMap),
-          srpc_app_hook:put(exchange_info, KeyId, ExchangeMap),
+          ClientId = maps:get(clientId, ExchangeMap),
+          srpc_app_hook:put(exchange_info, ClientId, ExchangeMap),
           {ok, ExchangeResponse};
         Error ->
           Error
@@ -65,21 +65,21 @@ lib_key_exchange(ExchangeRequest) ->
 
 %%------------------------------------------------------------------------------------------------
 %%
-%%   Lib Key Validate
+%%   Key Validate
 %%
 %%------------------------------------------------------------------------------------------------
-lib_key_validate(KeyId, ValidationRequest) ->
-  case srpc_app_hook:get(exchange_info, KeyId) of
+lib_key_validate(ClientId, ValidationRequest) ->
+  case srpc_app_hook:get(exchange_info, ClientId) of
     {ok, ExchangeMap} ->
       case srpc_lib:lib_key_process_validation_request(ExchangeMap, ValidationRequest) of
-        {ok, {_ReqKeyId, ClientChallenge, ReqValidationData}} ->
+        {ok, {_ReqClientId, ClientChallenge, ReqValidationData}} ->
           RespValidationData = srpc_app_hook:lib_key_validation_data(ReqValidationData),
           case srpc_lib:lib_key_create_validation_response(ExchangeMap, ClientChallenge,
                                                            RespValidationData) of
-            {ok, KeyMap, ValidationResponse} ->
-              srpc_app_hook:put(lib_key, KeyId, KeyMap),
+            {ok, ClientMap, ValidationResponse} ->
+              srpc_app_hook:put(lib_client, ClientId, ClientMap),
               {ok, ValidationResponse};
-            {invalid, _KeyMap, ValidationResponse} ->
+            {invalid, _ClientMap, ValidationResponse} ->
               {ok, ValidationResponse};
             Error ->
               Error
@@ -88,7 +88,7 @@ lib_key_validate(KeyId, ValidationRequest) ->
           Error
       end;
     undefined ->
-      {error, <<"No exchange info for keyId: ", KeyId/binary>>}
+      {error, <<"No exchange info for clientId: ", ClientId/binary>>}
   end.
 
 %%================================================================================================
@@ -96,10 +96,10 @@ lib_key_validate(KeyId, ValidationRequest) ->
 %% User Registration
 %%
 %%================================================================================================
-user_registration(KeyId, RegistrationRequest) ->
-  case key_map_for_key_id(KeyId) of
-    {ok, KeyMap} ->
-      case srpc_lib:process_registration_request(KeyMap, RegistrationRequest) of
+user_registration(ClientId, RegistrationRequest) ->
+  case client_map_for_id(ClientId) of
+    {ok, ClientMap} ->
+      case srpc_lib:process_registration_request(ClientMap, RegistrationRequest) of
         {ok, {RegistrationCode, SrpcUserData, SrpcReqData}} ->
           UserId = maps:get(userId, SrpcUserData),
           case parse_req_data(SrpcReqData) of
@@ -111,11 +111,11 @@ user_registration(KeyId, RegistrationRequest) ->
                   case srpc_app_hook:get(srpc_user, UserId) of
                     undefined ->
                       srpc_app_hook:put(srpc_user, UserId, SrpcUserData),
-                      srpc_lib:create_registration_response(KeyMap,
+                      srpc_lib:create_registration_response(ClientMap,
                                                             ?SRPC_REGISTRATION_OK,
                                                             SrpcRespData);
                     {ok, _SrpcUserData} ->
-                      srpc_lib:create_registration_response(KeyMap,
+                      srpc_lib:create_registration_response(ClientMap,
                                                             ?SRPC_REGISTRATION_DUP,
                                                             SrpcRespData)
                   end;
@@ -123,16 +123,16 @@ user_registration(KeyId, RegistrationRequest) ->
                   case srpc_app_hook:get(srpc_user, UserId) of
                     {ok, _SrpcUserData} ->
                       srpc_app_hook:put(srpc_user, UserId, SrpcUserData),
-                      srpc_lib:create_registration_response(KeyMap,
+                      srpc_lib:create_registration_response(ClientMap,
                                                             ?SRPC_REGISTRATION_OK,
                                                             SrpcRespData);
                     undefined ->
-                      srpc_lib:create_registration_response(KeyMap,
+                      srpc_lib:create_registration_response(ClientMap,
                                                             ?SRPC_REGISTRATION_NOT_FOUND,
                                                             SrpcRespData)
                   end;
                 _ ->
-                  srpc_lib:create_registration_response(KeyMap,
+                  srpc_lib:create_registration_response(ClientMap,
                                                         ?SRPC_REGISTRATION_ERROR,
                                                         SrpcRespData)
               end;
@@ -148,18 +148,18 @@ user_registration(KeyId, RegistrationRequest) ->
 
 %%================================================================================================
 %%
-%% User Key Agreement
+%% User Client Key Agreement
 %%
 %%================================================================================================
 %%------------------------------------------------------------------------------------------------
 %%
-%% User Key Exchange
+%% Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-user_key_exchange(CryptKeyId, ExchangeRequest) ->
-  case key_map_for_key_id(CryptKeyId) of
-    {ok, CryptKeyMap} ->
-      case srpc_lib:user_key_process_exchange_request(CryptKeyMap, ExchangeRequest) of
+user_key_exchange(CryptClientId, ExchangeRequest) ->
+  case client_map_for_id(CryptClientId) of
+    {ok, CryptClientMap} ->
+      case srpc_lib:user_key_process_exchange_request(CryptClientMap, ExchangeRequest) of
         {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
           case parse_req_data(SrpcReqData) of
             {ok, ReqExchangeData} ->
@@ -169,19 +169,19 @@ user_key_exchange(CryptKeyId, ExchangeRequest) ->
 
                   SrpcData = <<>>,
                   SrpcRespData = create_resp_data(SrpcData, RespExchangeData),
-                  case srpc_lib:user_key_create_exchange_response(CryptKeyMap,
+                  case srpc_lib:user_key_create_exchange_response(CryptClientMap,
                                                                   SrpcUserData,
                                                                   ClientPublicKey, 
                                                                   SrpcRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->
-                      ExchangeKeyId = maps:get(keyId, ExchangeMap),
-                      srpc_app_hook:put(exchange_info, ExchangeKeyId, ExchangeMap),
+                      ExchangeClientId = maps:get(clientId, ExchangeMap),
+                      srpc_app_hook:put(exchange_info, ExchangeClientId, ExchangeMap),
                       {ok, ExchangeResponse};
                     Error ->
                       Error
                   end;
                 undefined ->
-                  srpc_lib:user_key_create_exchange_response(CryptKeyMap, invalid, 
+                  srpc_lib:user_key_create_exchange_response(CryptClientMap, invalid, 
                                                              ClientPublicKey, UserId)
               end;
             Error ->
@@ -196,15 +196,15 @@ user_key_exchange(CryptKeyId, ExchangeRequest) ->
 
 %%------------------------------------------------------------------------------------------------
 %%
-%% User Key Validation
+%% Key Validation
 %%
 %%------------------------------------------------------------------------------------------------
-user_key_validate(CryptKeyId, ValidationRequest) ->
-  case key_map_for_key_id(CryptKeyId) of
-    {ok, CryptKeyMap} ->
-      case srpc_lib:user_key_process_validation_request(CryptKeyMap, ValidationRequest) of
-        {ok, {UserKeyId, ClientChallenge, SrpcReqValidationData}} ->
-          case srpc_app_hook:get(exchange_info, UserKeyId) of
+user_key_validate(CryptClientId, ValidationRequest) ->
+  case client_map_for_id(CryptClientId) of
+    {ok, CryptClientMap} ->
+      case srpc_lib:user_key_process_validation_request(CryptClientMap, ValidationRequest) of
+        {ok, {UserClientId, ClientChallenge, SrpcReqValidationData}} ->
+          case srpc_app_hook:get(exchange_info, UserClientId) of
             {ok, ExchangeMap} ->
               case parse_req_data(SrpcReqValidationData) of
                 {ok, ReqValidationData} ->
@@ -212,13 +212,14 @@ user_key_validate(CryptKeyId, ValidationRequest) ->
                   RespValidationData = 
                     srpc_app_hook:user_key_validation_data(UserId, ReqValidationData),
                   SrpcRespData = create_resp_data(<<>>, RespValidationData),
-                  case srpc_lib:user_key_create_validation_response(CryptKeyMap, ExchangeMap,
+                  case srpc_lib:user_key_create_validation_response(CryptClientMap, ExchangeMap,
                                                                     ClientChallenge,
                                                                     SrpcRespData) of
-                    {ok, KeyMap, ValidationResponse} ->
-                      srpc_app_hook:put(user_key, UserKeyId, maps:put(keyId, UserKeyId, KeyMap)),
+                    {ok, ClientMap, ValidationResponse} ->
+                      srpc_app_hook:put(user_client, UserClientId, 
+                                        maps:put(clientId, UserClientId, ClientMap)),
                       {ok, ValidationResponse};
-                    {invalid, _KeyMap, ValidationResponse} ->
+                    {invalid, _ClientMap, ValidationResponse} ->
                       %% CxTBD Report invalid
                       {ok, ValidationResponse}
                   end;
@@ -227,8 +228,8 @@ user_key_validate(CryptKeyId, ValidationRequest) ->
               end;
             undefined ->
               SrpcRespData = create_resp_data(<<>>, <<>>),
-              {_, _KeyMap, ValidationResponse} =
-                srpc_lib:user_key_create_validation_response(CryptKeyMap, invalid,
+              {_, _ClientMap, ValidationResponse} =
+                srpc_lib:user_key_create_validation_response(CryptClientMap, invalid,
                                                              ClientChallenge, SrpcRespData),
               {ok, ValidationResponse}
           end
@@ -239,20 +240,20 @@ user_key_validate(CryptKeyId, ValidationRequest) ->
 
 %%================================================================================================
 %%
-%% Key Invalidate
+%% Client Invalidate
 %%
 %%================================================================================================
-key_invalidate(KeyId, InvalidateRequest) ->
-  case key_map_for_key_id(KeyId) of
-    {ok, KeyMap} ->
-      EntityId = maps:get(entityId, KeyMap),
-      case decrypt_data(KeyMap, InvalidateRequest) of
+client_invalidate(ClientId, InvalidateRequest) ->
+  case client_map_for_id(ClientId) of
+    {ok, ClientMap} ->
+      EntityId = maps:get(entityId, ClientMap),
+      case decrypt_data(ClientMap, InvalidateRequest) of
         {ok, EntityId} ->
-          KeyType = maps:get(keyType, KeyMap),
-          srpc_app_hook:delete(KeyType, KeyId),
-          encrypt_data(KeyMap, EntityId);
+          ClientType = maps:get(clientType, ClientMap),
+          srpc_app_hook:delete(ClientType, ClientId),
+          encrypt_data(ClientMap, EntityId);
         {ok, _EntityId} ->
-          {error, <<"Invalidate KeyId using invalid entityId">>};
+          {error, <<"Invalidate ClientId using invalid entityId">>};
         Error ->
           Error
       end;
@@ -265,14 +266,14 @@ key_invalidate(KeyId, InvalidateRequest) ->
 %% Server Epoch
 %%
 %%================================================================================================
-server_epoch(KeyId, ServerEpochRequest) ->
-  case key_map_for_key_id(KeyId) of
-    {ok, KeyMap} ->
-      case srpc_encryptor:decrypt(KeyMap, ServerEpochRequest) of
+server_epoch(ClientId, ServerEpochRequest) ->
+  case client_map_for_id(ClientId) of
+    {ok, ClientMap} ->
+      case srpc_encryptor:decrypt(ClientMap, ServerEpochRequest) of
         {ok, <<RandomStamp/binary>>} ->
           DataEpoch = erlang:system_time(seconds),
           RespData = <<DataEpoch:?EPOCH_BITS, RandomStamp/binary>>,
-          srpc_encryptor:encrypt(KeyMap, RespData);
+          srpc_encryptor:encrypt(ClientMap, RespData);
         {ok, _ReqData} ->
           {error, <<"Invalid data epoch stamp">>};
         Error ->
@@ -292,16 +293,16 @@ server_epoch(KeyId, ServerEpochRequest) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-key_map_for_key_id(KeyId) ->
-  case srpc_app_hook:get(lib_key, KeyId) of
-    {ok, KeyMap} ->
-      {ok, KeyMap};
+client_map_for_id(ClientId) ->
+  case srpc_app_hook:get(lib_client, ClientId) of
+    {ok, ClientMap} ->
+      {ok, ClientMap};
     undefined ->
-      case srpc_app_hook:get(user_key, KeyId) of
-        {ok, KeyMap} ->
-          {ok, KeyMap};
+      case srpc_app_hook:get(user_client, ClientId) of
+        {ok, ClientMap} ->
+          {ok, ClientMap};
         undefined ->
-          {error, <<"No Key Map for KeyId: ", KeyId/binary>>}
+          {error, <<"No Key Map for ClientId: ", ClientId/binary>>}
       end
   end.
 
@@ -311,12 +312,12 @@ key_map_for_key_id(KeyId) ->
 %% Encrypt / Decrypt
 %%
 %%================================================================================================
-encrypt_data(KeyMap, Data) ->
+encrypt_data(ClientMap, Data) ->
   SrpcData = create_resp_data(<<>>, Data),
-  srpc_lib:encrypt(KeyMap, SrpcData).
+  srpc_lib:encrypt(ClientMap, SrpcData).
 
-decrypt_data(KeyMap, Data) ->
-  case srpc_lib:decrypt(KeyMap, Data) of
+decrypt_data(ClientMap, Data) ->
+  case srpc_lib:decrypt(ClientMap, Data) of
     {ok, SrpcData} ->
       parse_req_data(SrpcData);
     Error ->

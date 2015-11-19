@@ -53,7 +53,7 @@ lib_key_exchange(ExchangeRequest) ->
       RespExchangeData = srpc_app_hook:lib_key_exchange_data(ReqExchangeData),
       case srpc_lib:lib_key_create_exchange_response(ClientPublicKey, RespExchangeData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
-          ClientId = maps:get(ExchangeMap, clientId),
+          ClientId = maps:get(clientId, ExchangeMap),
           srpc_app_hook:put(ClientId, ExchangeMap, exchange_info),
           {ok, ExchangeResponse};
         Error ->

@@ -71,6 +71,7 @@ lib_key_exchange(ExchangeRequest) ->
 lib_key_validate(ClientId, ValidationRequest) ->
   case srpc_app_hook:get(ClientId, srpc_exchanges) of
     {ok, ExchangeMap} ->
+      srpc_app_hook:delete(ClientId, srpc_exchanges),
       case srpc_lib:lib_key_process_validation_request(ExchangeMap, ValidationRequest) of
         {ok, {_ReqClientId, ClientChallenge, ReqValidationData}} ->
           RespValidationData = srpc_app_hook:lib_key_validation_data(ReqValidationData),
@@ -88,7 +89,7 @@ lib_key_validate(ClientId, ValidationRequest) ->
           Error
       end;
     undefined ->
-      {error, <<"No exchange info for clientId: ", ClientId/binary>>}
+      {error, <<"No exchange info for Client Id: ", ClientId/binary>>}
   end.
 
 %%================================================================================================
@@ -206,6 +207,7 @@ user_key_validate(CryptClientId, ValidationRequest) ->
         {ok, {UserClientId, ClientChallenge, SrpcReqValidationData}} ->
           case srpc_app_hook:get(UserClientId, srpc_exchanges) of
             {ok, ExchangeMap} ->
+              srpc_app_hook:delete(UserClientId, srpc_exchanges),
               case parse_req_data(SrpcReqValidationData) of
                 {ok, ReqValidationData} ->
                   UserId = maps:get(entityId, ExchangeMap),
@@ -247,15 +249,14 @@ user_key_validate(CryptClientId, ValidationRequest) ->
 invalidate(ClientId, InvalidateRequest) ->
   case client_map_for_id(ClientId) of
     {ok, ClientMap} ->
-      EntityId = maps:get(entityId, ClientMap),
-      case decrypt_data(ClientMap, InvalidateRequest) of
-        {ok, EntityId} ->
+      case srpc_encryptor:decrypt(ClientMap, InvalidateRequest) of
+        {ok, ClientId} ->
           ClientType = maps:get(clientType, ClientMap),
           Cache = erlang:list_to_atom(erlang:atom_to_list(ClientType) ++ "s"),
           srpc_app_hook:delete(ClientId, Cache),
-          encrypt_data(ClientMap, EntityId);
-        {ok, _EntityId} ->
-          {error, <<"Invalidate ClientId using invalid entityId">>};
+          encrypt_data(ClientMap, ClientId);
+        {ok, _ClientId} ->
+          {error, <<"Invalid encrypted Client ID">>};
         Error ->
           Error
       end;
@@ -297,17 +298,21 @@ server_epoch(ClientId, ServerEpochRequest) ->
 %%------------------------------------------------------------------------------------------------
 client_map_for_id(ClientId) ->
   case srpc_app_hook:get(ClientId, srpc_lib_clients) of
-    {ok, ClientMap} ->
-      {ok, ClientMap};
     undefined ->
       case srpc_app_hook:get(ClientId, srpc_user_clients) of
-        {ok, ClientMap} ->
-          {ok, ClientMap};
         undefined ->
-          {error, <<"No Key Map for ClientId: ", ClientId/binary>>}
-      end
+          case srpc_app_hook:get(ClientId, srpc_exchanges) of
+            undefined ->
+              {error, <<"No Key Map for ClientId: ", ClientId/binary>>};
+            Result ->
+              Result
+          end;
+        Result ->
+          Result
+      end;
+    Result ->
+      Result
   end.
-
 
 %%================================================================================================
 %%

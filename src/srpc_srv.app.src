@@ -1,6 +1,6 @@
 {application, srpc_srv,
  [{description, "Srpc Server"}
- ,{vsn, "0.9.6"}
+ ,{vsn, "0.9.7"}
  ,{registered, []}
  ,{applications,
     [kernel

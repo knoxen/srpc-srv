@@ -20,8 +20,8 @@
 -callback registration_data(UserId :: binary(), ReqData :: binary()) ->
   RespData :: binary().
 
--callback user_key_exchange_data(ReqData :: binary()) ->
+-callback user_key_exchange_data(UserId :: binary(), ReqData :: binary()) ->
   RespData :: binary().
 
--callback user_key_validation_data(ReqData :: binary()) ->
+-callback user_key_validation_data(UserId :: binary(), ReqData :: binary()) ->
   RespData :: binary().

@@ -54,8 +54,12 @@ lib_key_exchange(ExchangeRequest) ->
       case srpc_lib:lib_key_create_exchange_response(ClientPublicKey, RespExchangeData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
           ClientId = maps:get(clientId, ExchangeMap),
-          srpc:put(ClientId, ExchangeMap, srpc_exchanges),
-          {ok, ExchangeResponse};
+          case srpc:put(ClientId, ExchangeMap, srpc_exchanges) of
+            ok ->
+              {ok, ExchangeResponse};
+            Error ->
+              Error
+          end;
         Error ->
           Error
       end;
@@ -78,8 +82,12 @@ lib_key_validate(ClientId, ValidationRequest) ->
           case srpc_lib:lib_key_create_validation_response(ExchangeMap, ClientChallenge,
                                                            RespValidationData) of
             {ok, ClientMap, ValidationResponse} ->
-              srpc:put(ClientId, ClientMap, srpc_lib_clients),
-              {ok, ValidationResponse};
+              case srpc:put(ClientId, ClientMap, srpc_lib_clients) of
+                ok ->
+                  {ok, ValidationResponse};
+                Error ->
+                  Error
+              end;
             {invalid, _ClientMap, ValidationResponse} ->
               {ok, ValidationResponse};
             Error ->
@@ -111,10 +119,16 @@ user_registration(ClientId, RegistrationRequest) ->
                 ?SRPC_REGISTRATION_CREATE ->
                   case srpc:get(UserId, srpc_users) of
                     undefined ->
-                      srpc:put(UserId, SrpcUserData, srpc_users),
-                      srpc_lib:create_registration_response(ClientMap,
-                                                            ?SRPC_REGISTRATION_OK,
-                                                            SrpcRespData);
+                      case srpc:put(UserId, SrpcUserData, srpc_users) of
+                        ok ->
+                          srpc_lib:create_registration_response(ClientMap,
+                                                                ?SRPC_REGISTRATION_OK,
+                                                                SrpcRespData);
+                        _Error ->
+                          srpc_lib:create_registration_response(ClientMap,
+                                                                ?SRPC_REGISTRATION_ERROR,
+                                                                SrpcRespData)
+                      end;
                     {ok, _SrpcUserData} ->
                       srpc_lib:create_registration_response(ClientMap,
                                                             ?SRPC_REGISTRATION_DUP,
@@ -122,11 +136,17 @@ user_registration(ClientId, RegistrationRequest) ->
                   end;
                 ?SRPC_REGISTRATION_UPDATE ->
                   case srpc:get(UserId, srpc_users) of
-                    {ok, _SrpcUserData} ->
-                      srpc:put(UserId, SrpcUserData, srpc_users),
-                      srpc_lib:create_registration_response(ClientMap,
-                                                            ?SRPC_REGISTRATION_OK,
-                                                            SrpcRespData);
+                    {ok, SrpcUserData} ->
+                      case srpc:put(UserId, SrpcUserData, srpc_users) of
+                        ok ->
+                          srpc_lib:create_registration_response(ClientMap,
+                                                                ?SRPC_REGISTRATION_OK,
+                                                                SrpcRespData);
+                        _Error ->
+                          srpc_lib:create_registration_response(ClientMap,
+                                                                ?SRPC_REGISTRATION_ERROR,
+                                                                SrpcRespData)
+                      end;
                     undefined ->
                       srpc_lib:create_registration_response(ClientMap,
                                                             ?SRPC_REGISTRATION_NOT_FOUND,
@@ -176,8 +196,12 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
                                                                   SrpcRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->
                       ExchangeClientId = maps:get(clientId, ExchangeMap),
-                      srpc:put(ExchangeClientId, ExchangeMap, srpc_exchanges),
-                      {ok, ExchangeResponse};
+                      case srpc:put(ExchangeClientId, ExchangeMap, srpc_exchanges) of
+                        ok ->
+                          {ok, ExchangeResponse};
+                        Error ->
+                          Error
+                      end;
                     Error ->
                       Error
                   end;
@@ -218,10 +242,13 @@ user_key_validate(CryptClientId, ValidationRequest) ->
                                                                     ClientChallenge,
                                                                     SrpcRespData) of
                     {ok, ClientMap, ValidationResponse} ->
-                      srpc:put(UserClientId, 
-                                        maps:put(clientId, UserClientId, ClientMap),
-                                        srpc_user_clients),
-                      {ok, ValidationResponse};
+                      case srpc:put(UserClientId, maps:put(clientId, UserClientId, ClientMap),
+                                    srpc_user_clients) of
+                        ok ->
+                          {ok, ValidationResponse};
+                        Error ->
+                          Error
+                      end;
                     {invalid, _ClientMap, ValidationResponse} ->
                       %% CxTBD Report invalid
                       {ok, ValidationResponse}

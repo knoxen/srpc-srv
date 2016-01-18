@@ -1,4 +1,4 @@
 [{<<"srpc_lib">>,
   {git,"git@bitbucket.org:knoxen/srpc-erlang-lib.git",
-       {ref,"cf3799546fab9409154fc1e7afe19da3a0ef5b1e"}},
+       {ref,"536e09136675dda59d34718c89a559c78c09e23b"}},
   0}].

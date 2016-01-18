@@ -75,7 +75,7 @@ lib_key_exchange(ExchangeRequest) ->
 lib_key_validate(ClientId, ValidationRequest) ->
   case srpc:exchange_get(ClientId) of
     {ok, ExchangeMap} ->
-      srpc:delete(ClientId),
+      srpc:exchange_delete(ClientId),
       case srpc_lib:lib_key_process_validation_request(ExchangeMap, ValidationRequest) of
         {ok, {_ReqClientId, ClientChallenge, ReqValidationData}} ->
           RespValidationData = srpc:lib_key_validation_data(ReqValidationData),

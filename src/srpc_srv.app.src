@@ -1,6 +1,6 @@
 {application, srpc_srv,
  [{description, "Srpc Server"}
- ,{vsn, "0.9.9"}
+ ,{vsn, git}
  ,{registered, []}
  ,{applications,
     [kernel

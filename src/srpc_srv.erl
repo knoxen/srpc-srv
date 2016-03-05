@@ -300,7 +300,7 @@ server_epoch(ClientId, ServerEpochRequest) ->
     {ok, ClientMap} ->
       case srpc_encryptor:decrypt(ClientMap, ServerEpochRequest) of
         {ok, <<RandomStamp/binary>>} ->
-          DataEpoch = erlang:system_time(seconds),
+          DataEpoch = epoch_seconds(),
           RespData = <<DataEpoch:?EPOCH_BITS, RandomStamp/binary>>,
           srpc_encryptor:encrypt(ClientMap, RespData);
         {ok, _ReqData} ->
@@ -381,10 +381,10 @@ req_age_tolerance() ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-parse_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, DataEpoch:?EPOCH_BITS, ReqData/binary>>) ->
+parse_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, ReqEpoch:?EPOCH_BITS, ReqData/binary>>) ->
   Tolerance = req_age_tolerance(),
-  ReqEpoch = erlang:system_time(seconds),
-  case abs(ReqEpoch - DataEpoch) =< Tolerance of
+  SysEpoch = epoch_seconds(),
+  case abs(SysEpoch - ReqEpoch) =< Tolerance of
     true ->
       {ok, ReqData};
     false ->
@@ -401,5 +401,8 @@ parse_req_data(_SrpcReqData) ->
 %%
 %%------------------------------------------------------------------------------------------------
 create_resp_data(SrpcData, RespData) ->
-  ServerEpoch = erlang:system_time(seconds),
+  ServerEpoch = epoch_seconds(),
   << ?DATA_HDR_VSN:?DATA_HDR_BITS, ServerEpoch:?EPOCH_BITS, SrpcData/binary, RespData/binary >>.
+
+epoch_seconds() ->
+  erlang:system_time(seconds).

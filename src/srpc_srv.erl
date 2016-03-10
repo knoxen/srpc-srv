@@ -50,7 +50,13 @@
 lib_key_exchange(ExchangeRequest) ->
   case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of
     {ok, {ClientPublicKey, ReqExchangeData}} ->
-      RespExchangeData = srpc:lib_key_exchange_data(ReqExchangeData),
+      RespExchangeData = 
+        case erlang:function_exported(srpc, lib_key_exchange_data, 1) of
+          true ->
+            srpc:lib_key_exchange_data(ReqExchangeData);
+          false ->
+            <<>>
+        end,
       case srpc_lib:lib_key_create_exchange_response(ClientPublicKey, RespExchangeData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
           ClientId = maps:get(clientId, ExchangeMap),
@@ -78,7 +84,13 @@ lib_key_validate(ClientId, ValidationRequest) ->
       srpc:exchange_delete(ClientId),
       case srpc_lib:lib_key_process_validation_request(ExchangeMap, ValidationRequest) of
         {ok, {_ReqClientId, ClientChallenge, ReqValidationData}} ->
-          RespValidationData = srpc:lib_key_validation_data(ReqValidationData),
+          RespValidationData = 
+            case erlang:function_exported(srpc, lib_key_validation_data, 1) of
+              true ->
+                srpc:lib_key_validation_data(ReqValidationData);
+              false ->
+                <<>>
+            end,
           case srpc_lib:lib_key_create_validation_response(ExchangeMap, ClientChallenge,
                                                            RespValidationData) of
             {ok, ClientMap, ValidationResponse} ->
@@ -113,7 +125,13 @@ user_registration(ClientId, RegistrationRequest) ->
           UserId = maps:get(userId, SrpcUserData),
           case parse_req_data(SrpcReqData) of
             {ok, ReqRegistrationData} ->
-              RespRegistrationData = srpc:registration_data(UserId, ReqRegistrationData),
+              RespRegistrationData = 
+                case erlang:function_exported(srpc, registration_data, 2) of
+                  true ->
+                    srpc:registration_data(UserId, ReqRegistrationData);
+                  false ->
+                    <<>>
+                end,
               SrpcRespData = create_resp_data(<<>>, RespRegistrationData),
               case RegistrationCode of
                 ?SRPC_REGISTRATION_CREATE ->
@@ -186,8 +204,13 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
             {ok, ReqExchangeData} ->
               case srpc:user_get(UserId) of
                 {ok, SrpcUserData} ->
-                  RespExchangeData = srpc:user_key_exchange_data(UserId, ReqExchangeData),
-
+                  RespExchangeData = 
+                    case erlang:function_exported(srpc, user_key_exchange_data, 2) of
+                      true ->
+                        srpc:user_key_exchange_data(UserId, ReqExchangeData);
+                      false ->
+                        <<>>
+                    end,
                   SrpcData = <<>>,
                   SrpcRespData = create_resp_data(SrpcData, RespExchangeData),
                   case srpc_lib:user_key_create_exchange_response(CryptClientMap,
@@ -236,7 +259,12 @@ user_key_validate(CryptClientId, ValidationRequest) ->
                 {ok, ReqValidationData} ->
                   UserId = maps:get(entityId, ExchangeMap),
                   RespValidationData = 
-                    srpc:user_key_validation_data(UserId, ReqValidationData),
+                    case erlang:function_exported(srpc, user_key_validation_data, 2) of
+                      true ->
+                        srpc:user_key_validation_data(UserId, ReqValidationData);
+                      false ->
+                        <<>>
+                    end,
                   SrpcRespData = create_resp_data(<<>>, RespValidationData),
                   case srpc_lib:user_key_create_validation_response(CryptClientMap, ExchangeMap,
                                                                     ClientChallenge,

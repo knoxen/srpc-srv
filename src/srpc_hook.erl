@@ -1,4 +1,4 @@
--module(srpc_srv_hook).
+-module(srpc_hook).
 
 -author("paul@knoxen.com").
 

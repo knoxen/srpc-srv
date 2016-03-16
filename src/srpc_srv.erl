@@ -122,7 +122,7 @@ user_registration(ClientId, RegistrationRequest) ->
     {ok, ClientMap} ->
       case srpc_lib:process_registration_request(ClientMap, RegistrationRequest) of
         {ok, {RegistrationCode, SrpcUserData, SrpcReqData}} ->
-          UserId = maps:get(userId, SrpcUserData),
+          UserId = maps:get(user_id, SrpcUserData),
           case parse_req_data(SrpcReqData) of
             {ok, ReqRegistrationData} ->
               RespRegistrationData = 

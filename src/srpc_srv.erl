@@ -400,8 +400,12 @@ req_age_tolerance() ->
     {ok, AgeTolerance} ->
       AgeTolerance;
     undefined ->
-      {ok, AgeTolerance} = application:get_env(?APP_NAME, req_age_tolerance),
-      AgeTolerance
+      case application:get_env(?APP_NAME, req_age_tolerance) of
+        {ok, AgeTolerance} ->
+          AgeTolerance;
+        undefined ->
+          0
+      end
   end.
 
 %%------------------------------------------------------------------------------------------------

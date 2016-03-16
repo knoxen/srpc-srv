@@ -59,7 +59,7 @@ lib_key_exchange(ExchangeRequest) ->
         end,
       case srpc_lib:lib_key_create_exchange_response(ClientPublicKey, RespExchangeData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
-          ClientId = maps:get(clientId, ExchangeMap),
+          ClientId = maps:get(client_id, ExchangeMap),
           case srpc:put(exchange, ClientId, ExchangeMap) of
             ok ->
               {ok, ExchangeResponse};
@@ -218,7 +218,7 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
                                                                   ClientPublicKey, 
                                                                   SrpcRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->
-                      ExchangeClientId = maps:get(clientId, ExchangeMap),
+                      ExchangeClientId = maps:get(client_id, ExchangeMap),
                       case srpc:put(exchange, ExchangeClientId, ExchangeMap) of
                         ok ->
                           {ok, ExchangeResponse};
@@ -257,7 +257,7 @@ user_key_validate(CryptClientId, ValidationRequest) ->
               srpc:delete(exchange, UserClientId),
               case parse_req_data(SrpcReqValidationData) of
                 {ok, ReqValidationData} ->
-                  UserId = maps:get(entityId, ExchangeMap),
+                  UserId = maps:get(entity_id, ExchangeMap),
                   RespValidationData = 
                     case erlang:function_exported(srpc, user_key_validation_data, 2) of
                       true ->
@@ -270,7 +270,7 @@ user_key_validate(CryptClientId, ValidationRequest) ->
                                                                     ClientChallenge,
                                                                     SrpcRespData) of
                     {ok, ClientMap, ValidationResponse} ->
-                      ClientMap2 = maps:put(clientId, UserClientId, ClientMap),
+                      ClientMap2 = maps:put(client_id, UserClientId, ClientMap),
                       case srpc:put(user_client, UserClientId, ClientMap2) of
                         ok ->
                           {ok, ValidationResponse};
@@ -306,7 +306,7 @@ invalidate(ClientId, InvalidateRequest) ->
     {ok, ClientMap} ->
       case srpc_encryptor:decrypt(ClientMap, InvalidateRequest) of
         {ok, ClientId} ->
-          ClientType = maps:get(clientType, ClientMap),
+          ClientType = maps:get(client_type, ClientMap),
           srpc:delete(ClientType, ClientId),
           encrypt_data(ClientMap, ClientId);
         {ok, _ClientId} ->

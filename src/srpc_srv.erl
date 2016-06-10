@@ -252,7 +252,7 @@ user_key_validate(CryptClientId, ValidationRequest) ->
     {ok, CryptClientMap} ->
       case srpc_lib:user_key_process_validation_request(CryptClientMap, ValidationRequest) of
         {ok, {UserClientId, ClientChallenge, SrpcReqValidationData}} ->
-          case srpc:get(exchange, UserClientId) of
+          case srpc:exchange_get(UserClientId) of
             {ok, ExchangeMap} ->
               srpc:exchange_delete(UserClientId),
               case parse_req_data(SrpcReqValidationData) of
@@ -307,7 +307,7 @@ invalidate(ClientId, InvalidateRequest) ->
       case srpc_encryptor:decrypt(ClientMap, InvalidateRequest) of
         {ok, ClientId} ->
           ClientType = maps:get(client_type, ClientMap),
-          srpc:delete(ClientType, ClientId),
+          srpc:channel_delete(ClientType, ClientId),
           encrypt_data(ClientMap, ClientId);
         {ok, _ClientId} ->
           {error, <<"Invalid encrypted Client ID">>};

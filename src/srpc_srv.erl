@@ -395,37 +395,36 @@ decrypt_data(ClientMap, Data) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-req_age_tolerance() ->
-  case application:get_env(req_age_tolerance) of
-    {ok, AgeTolerance} ->
-      AgeTolerance;
-    undefined ->
-      case application:get_env(?APP_NAME, req_age_tolerance) of
-        {ok, AgeTolerance} ->
-          AgeTolerance;
-        undefined ->
-          0
+parse_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, ReqEpoch:?EPOCH_BITS, ReqData/binary>>) ->
+  case req_age_tolerance() of
+    0 ->
+      {ok, ReqData};
+    Tolerance ->
+      SysEpoch = epoch_seconds(),
+      case abs(SysEpoch - ReqEpoch) =< Tolerance of
+        true ->
+          {ok, ReqData};
+        false ->
+          {error, <<"Request data age is greater than tolerance">>}
       end
-  end.
+  end;
+parse_req_data(<<_:?DATA_HDR_BITS, _Rest/binary>>) ->
+  {error, <<"Invalid Srpc data version number">>};
+parse_req_data(_SrpcReqData) ->
+  {error, <<"Invalid Srpc request data">>}.
 
 %%------------------------------------------------------------------------------------------------
 %%
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-parse_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, ReqEpoch:?EPOCH_BITS, ReqData/binary>>) ->
-  Tolerance = req_age_tolerance(),
-  SysEpoch = epoch_seconds(),
-  case abs(SysEpoch - ReqEpoch) =< Tolerance of
-    true ->
-      {ok, ReqData};
-    false ->
-      {error, <<"Request data age is greater than tolerance">>}
-  end;
-parse_req_data(<<_:?DATA_HDR_BITS, _Rest/binary>>) ->
-  {error, <<"Invalid Srpc data version number">>};
-parse_req_data(_SrpcReqData) ->
-  {error, <<"Invalid Srpc request data">>}.
+req_age_tolerance() ->
+  case application:get_env(?APP_NAME, req_age_tolerance) of
+    {ok, AgeTolerance} ->
+      AgeTolerance;
+    undefined ->
+      0
+  end.
 
 %%------------------------------------------------------------------------------------------------
 %%

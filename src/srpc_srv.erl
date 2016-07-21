@@ -419,12 +419,8 @@ parse_req_data(_SrpcReqData) ->
 %%
 %%------------------------------------------------------------------------------------------------
 req_age_tolerance() ->
-  case application:get_env(?APP_NAME, req_age_tolerance) of
-    {ok, AgeTolerance} ->
-      AgeTolerance;
-    undefined ->
-      0
-  end.
+  {ok, Tolerance} = application:get_env(srpc_srv, req_age_tolerance),
+  Tolerance.
 
 %%------------------------------------------------------------------------------------------------
 %%

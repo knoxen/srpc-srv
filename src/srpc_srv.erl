@@ -2,6 +2,13 @@
 
 -author("paul@knoxen.com").
 
+%%
+%% CxNote Current implementation uses an explicit app_srpc_handler module that must be provided
+%% by the hosting application. Need to allow this module to be passed in some manner to avoid
+%% the explicit, hard-coded module name.
+%%
+
+
 %%================================================================================================
 %%
 %% API exports
@@ -53,14 +60,14 @@ lib_key_exchange(ExchangeRequest) ->
       RespExchangeData = 
         case erlang:function_exported(srpc, lib_key_exchange_data, 1) of
           true ->
-            srpc:lib_key_exchange_data(ReqExchangeData);
+            app_srpc_handler:lib_key_exchange_data(ReqExchangeData);
           false ->
             <<>>
         end,
       case srpc_lib:lib_key_create_exchange_response(ClientPublicKey, RespExchangeData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
           ClientId = maps:get(client_id, ExchangeMap),
-          case srpc:exchange_put(ClientId, ExchangeMap) of
+          case app_srpc_handler:put(ClientId, ExchangeMap, exchange) of
             ok ->
               {ok, ExchangeResponse};
             Error ->
@@ -79,22 +86,22 @@ lib_key_exchange(ExchangeRequest) ->
 %%
 %%------------------------------------------------------------------------------------------------
 lib_key_validate(ClientId, ValidationRequest) ->
-  case srpc:exchange_get(ClientId) of
+  case app_srpc_handler:get(ClientId, exchange) of
     {ok, ExchangeMap} ->
-      srpc:exchange_delete(ClientId),
+      app_srpc_handler:delete(ClientId, exchange),
       case srpc_lib:lib_key_process_validation_request(ExchangeMap, ValidationRequest) of
         {ok, {_ReqClientId, ClientChallenge, ReqValidationData}} ->
           RespValidationData = 
             case erlang:function_exported(srpc, lib_key_validation_data, 1) of
               true ->
-                srpc:lib_key_validation_data(ReqValidationData);
+                app_srpc_handler:lib_key_validation_data(ReqValidationData);
               false ->
                 <<>>
             end,
           case srpc_lib:lib_key_create_validation_response(ExchangeMap, ClientChallenge,
                                                            RespValidationData) of
             {ok, ClientMap, ValidationResponse} ->
-              case srpc:channel_put(lib, ClientId, ClientMap) of
+              case app_srpc_handler:put(ClientId, ClientMap, lib) of
                 ok ->
                   {ok, ValidationResponse};
                 Error ->
@@ -128,16 +135,16 @@ user_registration(ClientId, RegistrationRequest) ->
               RespRegistrationData = 
                 case erlang:function_exported(srpc, registration_data, 2) of
                   true ->
-                    srpc:registration_data(UserId, ReqRegistrationData);
+                    app_srpc_handler:registration_data(UserId, ReqRegistrationData);
                   false ->
                     <<>>
                 end,
               SrpcRespData = create_resp_data(<<>>, RespRegistrationData),
               case RegistrationCode of
                 ?SRPC_REGISTRATION_CREATE ->
-                  case srpc:user_get(UserId) of
+                  case app_srpc_handler:get(UserId, registration) of
                     undefined ->
-                      case srpc:user_put(UserId, SrpcUserData) of
+                      case app_srpc_handler:put(UserId, SrpcUserData, registration) of
                         ok ->
                           srpc_lib:create_registration_response(ClientMap,
                                                                 ?SRPC_REGISTRATION_OK,
@@ -153,9 +160,9 @@ user_registration(ClientId, RegistrationRequest) ->
                                                             SrpcRespData)
                   end;
                 ?SRPC_REGISTRATION_UPDATE ->
-                  case srpc:user_get(UserId) of
+                  case app_srpc_handler:get(UserId, registration) of
                     {ok, SrpcUserData} ->
-                      case srpc:user_put(UserId, SrpcUserData) of
+                      case app_srpc_handler:put(UserId, SrpcUserData, registration) of
                         ok ->
                           srpc_lib:create_registration_response(ClientMap,
                                                                 ?SRPC_REGISTRATION_OK,
@@ -202,12 +209,12 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
         {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
           case parse_req_data(SrpcReqData) of
             {ok, ReqExchangeData} ->
-              case srpc:user_get(UserId) of
+              case app_srpc_handler:get(UserId, registration) of
                 {ok, SrpcUserData} ->
                   RespExchangeData = 
                     case erlang:function_exported(srpc, user_key_exchange_data, 2) of
                       true ->
-                        srpc:user_key_exchange_data(UserId, ReqExchangeData);
+                        app_srpc_handler:user_key_exchange_data(UserId, ReqExchangeData);
                       false ->
                         <<>>
                     end,
@@ -219,7 +226,7 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
                                                                   SrpcRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->
                       ExchangeClientId = maps:get(client_id, ExchangeMap),
-                      case srpc:exchange_put(ExchangeClientId, ExchangeMap) of
+                      case app_srpc_handler:put(ExchangeClientId, ExchangeMap, exchange) of
                         ok ->
                           {ok, ExchangeResponse};
                         Error ->
@@ -252,16 +259,16 @@ user_key_validate(CryptClientId, ValidationRequest) ->
     {ok, CryptClientMap} ->
       case srpc_lib:user_key_process_validation_request(CryptClientMap, ValidationRequest) of
         {ok, {UserClientId, ClientChallenge, SrpcReqValidationData}} ->
-          case srpc:exchange_get(UserClientId) of
+          case app_srpc_handler:get(UserClientId, exchange) of
             {ok, ExchangeMap} ->
-              srpc:exchange_delete(UserClientId),
+              app_srpc_handler:delete(UserClientId, exchange),
               case parse_req_data(SrpcReqValidationData) of
                 {ok, ReqValidationData} ->
                   UserId = maps:get(entity_id, ExchangeMap),
                   RespValidationData = 
                     case erlang:function_exported(srpc, user_key_validation_data, 2) of
                       true ->
-                        srpc:user_key_validation_data(UserId, ReqValidationData);
+                        app_srpc_handler:user_key_validation_data(UserId, ReqValidationData);
                       false ->
                         <<>>
                     end,
@@ -271,7 +278,7 @@ user_key_validate(CryptClientId, ValidationRequest) ->
                                                                     SrpcRespData) of
                     {ok, ClientMap, ValidationResponse} ->
                       ClientMap2 = maps:put(client_id, UserClientId, ClientMap),
-                      case srpc:channel_put(user, UserClientId, ClientMap2) of
+                      case app_srpc_handler:put(UserClientId, ClientMap2, user) of
                         ok ->
                           {ok, ValidationResponse};
                         Error ->
@@ -307,7 +314,7 @@ invalidate(ClientId, InvalidateRequest) ->
       case srpc_encryptor:decrypt(ClientMap, InvalidateRequest) of
         {ok, ClientId} ->
           ClientType = maps:get(client_type, ClientMap),
-          srpc:channel_delete(ClientType, ClientId),
+          app_srpc_handler:delete(ClientId, ClientType),
           encrypt_data(ClientMap, ClientId);
         {ok, _ClientId} ->
           {error, <<"Invalid encrypted Client ID">>};
@@ -351,11 +358,11 @@ server_epoch(ClientId, ServerEpochRequest) ->
 %%
 %%------------------------------------------------------------------------------------------------
 client_map_for_id(ClientId) ->
-  case srpc:channel_get(lib, ClientId) of
+  case app_srpc_handler:get(ClientId, lib) of
     undefined ->
-      case srpc:channel_get(user, ClientId) of
+      case app_srpc_handler:get(ClientId, user) of
         undefined ->
-          case srpc:exchange_get(ClientId) of
+          case app_srpc_handler:get(ClientId, exchange) of
             undefined ->
               {error, <<"No Key Map for ClientId: ", ClientId/binary>>};
             Result ->

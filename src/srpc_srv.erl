@@ -364,7 +364,7 @@ client_map_for_id(ClientId) ->
         undefined ->
           case app_srpc_handler:get(ClientId, exchange) of
             undefined ->
-              {error, <<"No Key Map for ClientId: ", ClientId/binary>>};
+              {error, <<"Invalid ClientId: ", ClientId/binary>>};
             Result ->
               Result
           end;

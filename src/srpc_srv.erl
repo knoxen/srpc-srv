@@ -76,8 +76,8 @@ lib_key_exchange(ExchangeRequest) ->
         Error ->
           Error
       end;
-    Error ->
-      Error
+    InvalidError ->
+      InvalidError
   end.
 
 %%------------------------------------------------------------------------------------------------
@@ -182,14 +182,14 @@ user_registration(ClientId, RegistrationRequest) ->
                                                         ?SRPC_REGISTRATION_ERROR,
                                                         SrpcRespData)
               end;
-            Error ->
-              Error
+            InvalidError ->
+              InvalidError
           end;
         Error ->
           Error
       end;
-    Error ->
-      Error
+    {invalid, Reason} ->
+      {error, Reason}
   end.
 
 %%================================================================================================
@@ -239,14 +239,14 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
                   srpc_lib:user_key_create_exchange_response(CryptClientMap, invalid, 
                                                              ClientPublicKey, UserId)
               end;
-            Error ->
-              Error
+            InvalidError ->
+              InvalidError
           end;
         Error ->
           Error
       end;
-    Error ->
-      Error
+    Invalid ->
+      Invalid
   end.
 
 %%------------------------------------------------------------------------------------------------
@@ -288,8 +288,8 @@ user_key_validate(CryptClientId, ValidationRequest) ->
                       %% CxTBD Report invalid
                       {ok, ValidationResponse}
                   end;
-                Error ->
-                  Error
+                InvalidError ->
+                  InvalidError
               end;
             undefined ->
               SrpcRespData = create_resp_data(<<>>, <<>>),
@@ -299,8 +299,8 @@ user_key_validate(CryptClientId, ValidationRequest) ->
               {ok, ValidationResponse}
           end
       end;
-    Error ->
-      Error
+    Invalid ->
+      Invalid
   end.
 
 %%================================================================================================
@@ -321,8 +321,8 @@ invalidate(ClientId, InvalidateRequest) ->
         Error ->
           Error
       end;
-    Error ->
-      Error
+    Invalid ->
+      Invalid
   end.
 
 %%================================================================================================
@@ -343,8 +343,8 @@ server_epoch(ClientId, ServerEpochRequest) ->
         Error ->
           Error
       end;
-    Error ->
-      Error
+    Invalid ->
+      Invalid
   end.    
 
 %%================================================================================================
@@ -364,7 +364,7 @@ client_map_for_id(ClientId) ->
         undefined ->
           case app_srpc_handler:get(ClientId, exchange) of
             undefined ->
-              {error, <<"Invalid ClientId: ", ClientId/binary>>};
+              {invalid, <<"Invalid ClientId: ", ClientId/binary>>};
             Result ->
               Result
           end;
@@ -388,8 +388,8 @@ decrypt_data(ClientMap, Data) ->
   case srpc_lib:decrypt(ClientMap, Data) of
     {ok, SrpcData} ->
       parse_req_data(SrpcData);
-    Error ->
-      Error
+    InvalidError ->
+      InvalidError
   end.
 
 %%================================================================================================
@@ -412,7 +412,7 @@ parse_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, ReqEpoch:?EPOCH_BITS, ReqData/bin
         true ->
           {ok, ReqData};
         false ->
-          {error, <<"Request data age is greater than tolerance">>}
+          {invalid, <<"Request age exceeds tolerance">>}
       end
   end;
 parse_req_data(<<_:?DATA_HDR_BITS, _Rest/binary>>) ->

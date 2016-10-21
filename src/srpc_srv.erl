@@ -58,7 +58,7 @@ lib_key_exchange(ExchangeRequest) ->
   case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of
     {ok, {ClientPublicKey, ReqExchangeData}} ->
       RespExchangeData = 
-        case erlang:function_exported(srpc, lib_key_exchange_data, 1) of
+        case erlang:function_exported(app_srpc_handler, lib_key_exchange_data, 1) of
           true ->
             app_srpc_handler:lib_key_exchange_data(ReqExchangeData);
           false ->
@@ -92,7 +92,7 @@ lib_key_validate(ClientId, ValidationRequest) ->
       case srpc_lib:lib_key_process_validation_request(ExchangeMap, ValidationRequest) of
         {ok, {_ReqClientId, ClientChallenge, ReqValidationData}} ->
           RespValidationData = 
-            case erlang:function_exported(srpc, lib_key_validation_data, 1) of
+            case erlang:function_exported(app_srpc_handler, lib_key_validation_data, 1) of
               true ->
                 app_srpc_handler:lib_key_validation_data(ReqValidationData);
               false ->
@@ -133,7 +133,7 @@ user_registration(ClientId, RegistrationRequest) ->
           case parse_req_data(SrpcReqData) of
             {ok, ReqRegistrationData} ->
               RespRegistrationData = 
-                case erlang:function_exported(srpc, registration_data, 2) of
+                case erlang:function_exported(app_srpc_handler, registration_data, 2) of
                   true ->
                     app_srpc_handler:registration_data(UserId, ReqRegistrationData);
                   false ->
@@ -212,7 +212,7 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
               case app_srpc_handler:get(UserId, registration) of
                 {ok, SrpcUserData} ->
                   RespExchangeData = 
-                    case erlang:function_exported(srpc, user_key_exchange_data, 2) of
+                    case erlang:function_exported(app_srpc_handler, user_key_exchange_data, 2) of
                       true ->
                         app_srpc_handler:user_key_exchange_data(UserId, ReqExchangeData);
                       false ->
@@ -266,7 +266,7 @@ user_key_validate(CryptClientId, ValidationRequest) ->
                 {ok, ReqValidationData} ->
                   UserId = maps:get(entity_id, ExchangeMap),
                   RespValidationData = 
-                    case erlang:function_exported(srpc, user_key_validation_data, 2) of
+                    case erlang:function_exported(app_srpc_handler, user_key_validation_data, 2) of
                       true ->
                         app_srpc_handler:user_key_validation_data(UserId, ReqValidationData);
                       false ->

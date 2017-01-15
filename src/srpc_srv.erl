@@ -28,9 +28,10 @@
 
 -define(APP_NAME, srpc_srv).
 
--define(DATA_HDR_VSN,   1).
--define(DATA_HDR_BITS,  8).
--define(EPOCH_BITS,    32).
+-define(HDR_VSN,         1).
+-define(HDR_BITS,        8).
+-define(EPOCH_BITS,     32).
+-define(NONCE_LEN_BITS,  8).
 
 %%================================================================================================
 %%
@@ -116,7 +117,7 @@ lib_key_validate(ClientId, ValidationRequest) ->
           Error
       end;
     undefined ->
-      {error, <<"No exchange info for Client Id: ", ClientId/binary>>}
+      {invalid, <<"No exchange info for Client Id: ", ClientId/binary>>}
   end.
 
 %%================================================================================================
@@ -130,7 +131,7 @@ user_registration(ClientId, RegistrationRequest) ->
       case srpc_lib:process_registration_request(ClientMap, RegistrationRequest) of
         {ok, {RegistrationCode, SrpcUserData, SrpcReqData}} ->
           UserId = maps:get(user_id, SrpcUserData),
-          case parse_req_data(SrpcReqData) of
+          case extract_req_data(SrpcReqData) of
             {ok, ReqRegistrationData} ->
               RespRegistrationData = 
                 case erlang:function_exported(app_srpc_handler, registration_data, 2) of
@@ -207,7 +208,7 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
     {ok, CryptClientMap} ->
       case srpc_lib:user_key_process_exchange_request(CryptClientMap, ExchangeRequest) of
         {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
-          case parse_req_data(SrpcReqData) of
+          case extract_req_data(SrpcReqData) of
             {ok, ReqExchangeData} ->
               case app_srpc_handler:get(UserId, registration) of
                 {ok, SrpcUserData} ->
@@ -262,7 +263,7 @@ user_key_validate(CryptClientId, ValidationRequest) ->
           case app_srpc_handler:get(UserClientId, exchange) of
             {ok, ExchangeMap} ->
               app_srpc_handler:delete(UserClientId, exchange),
-              case parse_req_data(SrpcReqValidationData) of
+              case extract_req_data(SrpcReqValidationData) of
                 {ok, ReqValidationData} ->
                   UserId = maps:get(entity_id, ExchangeMap),
                   RespValidationData = 
@@ -387,7 +388,7 @@ encrypt_data(ClientMap, Data) ->
 decrypt_data(ClientMap, Data) ->
   case srpc_lib:decrypt(ClientMap, Data) of
     {ok, SrpcData} ->
-      parse_req_data(SrpcData);
+      extract_req_data(SrpcData);
     InvalidError ->
       InvalidError
   end.
@@ -402,22 +403,53 @@ decrypt_data(ClientMap, Data) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-parse_req_data(<<?DATA_HDR_VSN:?DATA_HDR_BITS, ReqEpoch:?EPOCH_BITS, ReqData/binary>>) ->
-  case req_age_tolerance() of
-    0 ->
+extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, NonceLen:?NONCE_LEN_BITS,
+                   MoreData/binary>>) ->
+  {Nonce, ReqData} = 
+    case NonceLen of
+      0 ->
+        {<<"">>, MoreData};
+      _ ->
+        case MoreData of
+          <<NonceData:NonceLen/binary, Data/binary>> ->
+            {NonceData, Data};
+          _ ->
+            {error, <<"Invalid nonce len longer than available data">>}
+        end
+    end,
+
+  case application:get_env(srpc_srv, req_age_tolerance) of
+    {ok, 0} ->
       {ok, ReqData};
-    Tolerance ->
+    {ok, Tolerance} ->
       SysEpoch = epoch_seconds(),
       case abs(SysEpoch - ReqEpoch) =< Tolerance of
         true ->
-          {ok, ReqData};
+          case NonceLen of
+            0 ->
+              {ok, ReqData};
+            _ ->
+              case Nonce of
+                error ->
+                  {Nonce, ReqData};
+                _ ->
+                  case app_srpc_handler:get(Nonce, nonce) of
+                    {ok, true} ->
+                      {invalid, <<"Repeat nonce">>};
+                    undefined ->
+                      app_srpc_handler:put(Nonce, true, nonce),
+                      erlang:put(nonce, Nonce),
+                      {ok, ReqData}
+                  end
+              end
+          end;
         false ->
           {invalid, <<"Request age exceeds tolerance">>}
       end
   end;
-parse_req_data(<<_:?DATA_HDR_BITS, _Rest/binary>>) ->
+extract_req_data(<<_:?HDR_BITS, _Rest/binary>>) ->
   {error, <<"Invalid Srpc data version number">>};
-parse_req_data(_SrpcReqData) ->
+extract_req_data(_SrpcReqData) ->
   {error, <<"Invalid Srpc request data">>}.
 
 %%------------------------------------------------------------------------------------------------
@@ -425,18 +457,17 @@ parse_req_data(_SrpcReqData) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-req_age_tolerance() ->
-  {ok, Tolerance} = application:get_env(srpc_srv, req_age_tolerance),
-  Tolerance.
-
-%%------------------------------------------------------------------------------------------------
-%%
-%%
-%%
-%%------------------------------------------------------------------------------------------------
 create_resp_data(SrpcData, RespData) ->
+  Nonce = 
+    case erlang:get(nonce) of
+      undefined ->
+        <<>>;
+      Value ->
+        Value
+    end,
+  
   ServerEpoch = epoch_seconds(),
-  << ?DATA_HDR_VSN:?DATA_HDR_BITS, ServerEpoch:?EPOCH_BITS, SrpcData/binary, RespData/binary >>.
+  << ?HDR_VSN:?HDR_BITS, ServerEpoch:?EPOCH_BITS, SrpcData/binary, RespData/binary >>.
 
 epoch_seconds() ->
   erlang:system_time(seconds).

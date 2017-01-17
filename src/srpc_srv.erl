@@ -94,8 +94,11 @@ lib_key_validate(ClientId, ValidationRequest) ->
       app_srpc_handler:delete(ClientId, exchange),
       case srpc_lib:lib_key_process_validation_request(ExchangeMap, ValidationRequest) of
         {ok, {_ReqClientId, ClientChallenge, SrpcReqData}} ->
-          case extract_req_data(SrpcReqData) of
-            {ok, ValidationReqData} ->
+          {Nonce, ValidationReqData} = extract_nonce_req_data(SrpcReqData),
+          case Nonce of
+            error ->
+              {Nonce, ValidationReqData};
+            _ ->
               ValidationRespData = 
                 case erlang:function_exported(app_srpc_handler, lib_key_validation_data, 1) of
                   true ->
@@ -117,9 +120,7 @@ lib_key_validate(ClientId, ValidationRequest) ->
                   {ok, ValidationResponse};
                 Error ->
                   Error
-              end;
-            Invalid ->
-              Invalid
+              end
           end;
         Error ->
           Error
@@ -410,27 +411,26 @@ decrypt_data(ClientMap, Data) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, NonceLen:?NONCE_BITS,
-                   MoreData/binary>>) ->
-  {Nonce, ReqData} = 
-    case NonceLen of
-      0 ->
-        {<<"">>, MoreData};
-      _ ->
-        case MoreData of
-          <<NonceData:NonceLen/binary, Data/binary>> ->
-            erlang:put(nonce, NonceData),
-            {NonceData, Data};
-          _ ->
-            {error, <<"Invalid nonce len longer than available data">>}
-        end
-    end,
+extract_nonce_req_data(<<NonceLen:?NONCE_BITS, MoreData/binary>>) ->
+  case NonceLen of
+    0 ->
+      {error, <<"Invalid lib key req nonce len of 0">>};
+    _ ->
+      case MoreData of
+        <<NonceData:NonceLen/binary, Data/binary>> ->
+          erlang:put(nonce, NonceData),
+          {NonceData, Data};
+        _ ->
+          {error, <<"Invalid nonce len longer than available data">>}
+      end
+  end.        
 
-  <<LibKeyValEpoch:?EPOCH_BITS>> = ?LIB_KEY_VAL_EPOCH,
-  case ReqEpoch =:= LibKeyValEpoch of
-    true ->
-      {ok, ReqData};
-    false ->
+extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, MoreData/binary>>) ->
+  {Nonce, ReqData} = extract_nonce_req_data(MoreData),
+  case Nonce of
+    error ->
+      {Nonce, ReqData};
+    _ ->
       case application:get_env(srpc_srv, req_age_tolerance) of
         {ok, 0} ->
           {ok, ReqData};
@@ -438,30 +438,25 @@ extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, NonceLen:?NONCE_BIT
           SysEpoch = epoch_seconds(),
           case abs(SysEpoch - ReqEpoch) =< Tolerance of
             true ->
-              case NonceLen of
+              case erlang:byte_size(Nonce) of
                 0 ->
                   {ok, ReqData};
                 _ ->
-                  case Nonce of
-                    error ->
-                      {Nonce, ReqData};
-                    _ ->
-                      case erlang:function_exported(app_srpc_handler, nonce, 1) of
+                  case erlang:function_exported(app_srpc_handler, nonce, 1) of
+                    true ->
+                      case app_srpc_handler:nonce(Nonce) of
                         true ->
-                          case app_srpc_handler:nonce(Nonce) of
-                            true ->
-                              {ok, ReqData};
-                            false ->
-                              {invalid, <<"Repeat nonce: ", Nonce/binary>>}
-                          end;
+                          {ok, ReqData};
                         false ->
-                          {ok, ReqData}
-                      end
+                          {invalid, <<"Repeat nonce: ", Nonce/binary>>}
+                      end;
+                    false ->
+                      {ok, ReqData}
                   end
-              end;
-            false ->
-              {invalid, <<"Request age exceeds tolerance">>}
-          end
+              end
+          end;
+        false ->
+          {invalid, <<"Request age exceeds tolerance">>}
       end
   end;
 extract_req_data(<<_:?HDR_BITS, _Rest/binary>>) ->

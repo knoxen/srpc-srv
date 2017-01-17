@@ -12,14 +12,14 @@
 %%
 %%------------------------------------------------------------------------------------------------
 -callback put(Key :: binary(), Value :: term(), 
-              Type :: exchange | lib | user | registration | nonce) ->
+              Type :: exchange | lib | user | registration) ->
   ok | {error, Reason :: string()}.
 
 %%------------------------------------------------------------------------------------------------
 %% @doc Get value for Key in storage Type
 %%
 %%------------------------------------------------------------------------------------------------
--callback get(Key :: binary(), Type :: exchange | lib | user | registration | nonce) ->
+-callback get(Key :: binary(), Type :: exchange | lib | user | registration) ->
   {ok, Value :: term()} | undefined.
 
 %%------------------------------------------------------------------------------------------------

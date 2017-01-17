@@ -28,10 +28,10 @@
 
 -define(APP_NAME, srpc_srv).
 
--define(HDR_VSN,         1).
--define(HDR_BITS,        8).
--define(EPOCH_BITS,     32).
--define(NONCE_LEN_BITS,  8).
+-define(HDR_VSN,     1).
+-define(HDR_BITS,    8).
+-define(EPOCH_BITS, 32).
+-define(NONCE_BITS,  8).
 
 %%================================================================================================
 %%
@@ -91,27 +91,33 @@ lib_key_validate(ClientId, ValidationRequest) ->
     {ok, ExchangeMap} ->
       app_srpc_handler:delete(ClientId, exchange),
       case srpc_lib:lib_key_process_validation_request(ExchangeMap, ValidationRequest) of
-        {ok, {_ReqClientId, ClientChallenge, ReqValidationData}} ->
-          RespValidationData = 
-            case erlang:function_exported(app_srpc_handler, lib_key_validation_data, 1) of
-              true ->
-                app_srpc_handler:lib_key_validation_data(ReqValidationData);
-              false ->
-                <<>>
-            end,
-          case srpc_lib:lib_key_create_validation_response(ExchangeMap, ClientChallenge,
-                                                           RespValidationData) of
-            {ok, ClientMap, ValidationResponse} ->
-              case app_srpc_handler:put(ClientId, ClientMap, lib) of
-                ok ->
+        {ok, {_ReqClientId, ClientChallenge, SrpcReqData}} ->
+          case extract_req_data(SrpcReqData) of
+            {ok, ValidationReqData} ->
+              ValidationRespData = 
+                case erlang:function_exported(app_srpc_handler, lib_key_validation_data, 1) of
+                  true ->
+                    app_srpc_handler:lib_key_validation_data(ValidationReqData);
+                  false ->
+                    <<>>
+                end,
+              SrpcRespData = create_srpc_resp_data(ValidationRespData),
+              case srpc_lib:lib_key_create_validation_response(ExchangeMap, ClientChallenge,
+                                                               SrpcRespData) of
+                {ok, ClientMap, ValidationResponse} ->
+                  case app_srpc_handler:put(ClientId, ClientMap, lib) of
+                    ok ->
+                      {ok, ValidationResponse};
+                    Error ->
+                      Error
+                  end;
+                {invalid, _ClientMap, ValidationResponse} ->
                   {ok, ValidationResponse};
                 Error ->
                   Error
               end;
-            {invalid, _ClientMap, ValidationResponse} ->
-              {ok, ValidationResponse};
-            Error ->
-              Error
+            Invalid ->
+              Invalid
           end;
         Error ->
           Error
@@ -140,7 +146,7 @@ user_registration(ClientId, RegistrationRequest) ->
                   false ->
                     <<>>
                 end,
-              SrpcRespData = create_resp_data(<<>>, RespRegistrationData),
+              SrpcRespData = create_srpc_resp_data(RespRegistrationData),
               case RegistrationCode of
                 ?SRPC_REGISTRATION_CREATE ->
                   case app_srpc_handler:get(UserId, registration) of
@@ -183,8 +189,8 @@ user_registration(ClientId, RegistrationRequest) ->
                                                         ?SRPC_REGISTRATION_ERROR,
                                                         SrpcRespData)
               end;
-            InvalidError ->
-              InvalidError
+            Invalid ->
+              Invalid
           end;
         Error ->
           Error
@@ -219,8 +225,7 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
                       false ->
                         <<>>
                     end,
-                  SrpcData = <<>>,
-                  SrpcRespData = create_resp_data(SrpcData, RespExchangeData),
+                  SrpcRespData = create_srpc_resp_data(RespExchangeData),
                   case srpc_lib:user_key_create_exchange_response(CryptClientMap,
                                                                   SrpcUserData,
                                                                   ClientPublicKey, 
@@ -273,7 +278,7 @@ user_key_validate(CryptClientId, ValidationRequest) ->
                       false ->
                         <<>>
                     end,
-                  SrpcRespData = create_resp_data(<<>>, RespValidationData),
+                  SrpcRespData = create_srpc_resp_data(RespValidationData),
                   case srpc_lib:user_key_create_validation_response(CryptClientMap, ExchangeMap,
                                                                     ClientChallenge,
                                                                     SrpcRespData) of
@@ -293,7 +298,7 @@ user_key_validate(CryptClientId, ValidationRequest) ->
                   InvalidError
               end;
             undefined ->
-              SrpcRespData = create_resp_data(<<>>, <<>>),
+              SrpcRespData = create_srpc_resp_data(<<>>),
               {_, _ClientMap, ValidationResponse} =
                 srpc_lib:user_key_create_validation_response(CryptClientMap, invalid,
                                                              ClientChallenge, SrpcRespData),
@@ -312,13 +317,13 @@ user_key_validate(CryptClientId, ValidationRequest) ->
 invalidate(ClientId, InvalidateRequest) ->
   case client_map_for_id(ClientId) of
     {ok, ClientMap} ->
-      case srpc_encryptor:decrypt(ClientMap, InvalidateRequest) of
+      case decrypt_data(ClientMap, InvalidateRequest) of
         {ok, ClientId} ->
           ClientType = maps:get(client_type, ClientMap),
           app_srpc_handler:delete(ClientId, ClientType),
           encrypt_data(ClientMap, ClientId);
         {ok, _ClientId} ->
-          {error, <<"Invalid encrypted Client ID">>};
+          {error, <<"Attempt to invalidate another ClientId">>};
         Error ->
           Error
       end;
@@ -382,7 +387,7 @@ client_map_for_id(ClientId) ->
 %%
 %%================================================================================================
 encrypt_data(ClientMap, Data) ->
-  SrpcData = create_resp_data(<<>>, Data),
+  SrpcData = create_srpc_resp_data(Data),
   srpc_lib:encrypt(ClientMap, SrpcData).
 
 decrypt_data(ClientMap, Data) ->
@@ -403,7 +408,7 @@ decrypt_data(ClientMap, Data) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, NonceLen:?NONCE_LEN_BITS,
+extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, NonceLen:?NONCE_BITS,
                    MoreData/binary>>) ->
   {Nonce, ReqData} = 
     case NonceLen of
@@ -433,12 +438,16 @@ extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, NonceLen:?NONCE_LEN
                 error ->
                   {Nonce, ReqData};
                 _ ->
-                  case app_srpc_handler:get(Nonce, nonce) of
-                    {ok, true} ->
-                      {invalid, <<"Repeat nonce">>};
-                    undefined ->
-                      app_srpc_handler:put(Nonce, true, nonce),
-                      erlang:put(nonce, Nonce),
+                  case erlang:function_exported(app_srpc_handler, nonce, 1) of
+                    true ->
+                      case app_srpc_handler:nonce(Nonce) of
+                        true ->
+                          erlang:put(nonce, Nonce),
+                          {ok, ReqData};
+                        false ->
+                          {invalid, <<"Repeat nonce">>}
+                      end;
+                    false ->
                       {ok, ReqData}
                   end
               end
@@ -457,7 +466,8 @@ extract_req_data(_SrpcReqData) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-create_resp_data(SrpcData, RespData) ->
+create_srpc_resp_data(RespData) ->
+  Epoch = epoch_seconds(),
   Nonce = 
     case erlang:get(nonce) of
       undefined ->
@@ -465,9 +475,8 @@ create_resp_data(SrpcData, RespData) ->
       Value ->
         Value
     end,
-  
-  ServerEpoch = epoch_seconds(),
-  << ?HDR_VSN:?HDR_BITS, ServerEpoch:?EPOCH_BITS, SrpcData/binary, RespData/binary >>.
+  NonceLen = erlang:byte_size(Nonce),
+  <<?HDR_VSN:?HDR_BITS, Epoch:?EPOCH_BITS, NonceLen:?NONCE_BITS, Nonce/binary, RespData/binary>>.
 
 epoch_seconds() ->
   erlang:system_time(seconds).

@@ -19,10 +19,10 @@
         ,user_registration/2
         ,user_key_exchange/2
         ,user_key_validate/2
-        ,server_epoch/2
         ,encrypt_data/2
         ,decrypt_data/2
         ,client_map_for_id/1
+        ,server_epoch/2
         ,invalidate/2
         ]).
 
@@ -314,6 +314,26 @@ user_key_validate(CryptClientId, ValidationRequest) ->
 
 %%================================================================================================
 %%
+%% Server Epoch
+%%
+%%================================================================================================
+server_epoch(ClientId, ServerEpochRequest) ->
+  case client_map_for_id(ClientId) of
+    {ok, ClientMap} ->
+      case srpc_encryptor:decrypt(ClientMap, ServerEpochRequest) of
+        {ok, Nonce} ->
+          DataEpoch = epoch_seconds(),
+          RespData = <<DataEpoch:?EPOCH_BITS, Nonce/binary>>,
+          srpc_encryptor:encrypt(ClientMap, RespData);
+        Error ->
+          Error
+      end;
+    Invalid ->
+      Invalid
+  end.    
+
+%%================================================================================================
+%%
 %% Client Invalidate
 %%
 %%================================================================================================
@@ -333,28 +353,6 @@ invalidate(ClientId, InvalidateRequest) ->
     Invalid ->
       Invalid
   end.
-
-%%================================================================================================
-%%
-%% Server Epoch
-%%
-%%================================================================================================
-server_epoch(ClientId, ServerEpochRequest) ->
-  case client_map_for_id(ClientId) of
-    {ok, ClientMap} ->
-      case srpc_encryptor:decrypt(ClientMap, ServerEpochRequest) of
-        {ok, <<RandomStamp/binary>>} ->
-          DataEpoch = epoch_seconds(),
-          RespData = <<DataEpoch:?EPOCH_BITS, RandomStamp/binary>>,
-          srpc_encryptor:encrypt(ClientMap, RespData);
-        {ok, _ReqData} ->
-          {error, <<"Invalid data epoch stamp">>};
-        Error ->
-          Error
-      end;
-    Invalid ->
-      Invalid
-  end.    
 
 %%================================================================================================
 %%

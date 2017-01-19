@@ -6,8 +6,6 @@
     [kernel
     ,stdlib
     ]}
- ,{env,
-   [{req_age_tolerance, 0}
-   ]}
+ ,{env, []}
  ,{modules, []}
  ]}.

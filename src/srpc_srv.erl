@@ -436,7 +436,8 @@ extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, MoreData/binary>>) 
           case app_srpc_handler:req_age_tolerance() of
             Tolerance when 0 < Tolerance ->
               SysEpoch = epoch_seconds(),
-              case abs(SysEpoch - ReqEpoch) =< Tolerance of
+              ReqAge = abs(SysEpoch - ReqEpoch),
+              case ReqAge =< Tolerance of
                 true ->
                   case erlang:byte_size(Nonce) of
                     0 ->
@@ -448,14 +449,15 @@ extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, MoreData/binary>>) 
                             true ->
                               {ok, ReqData};
                             false ->
-                              {invalid, <<"Repeat nonce: ", Nonce/binary>>}
+                              {invalid, <<"Repeated nonce: ", Nonce/binary>>}
                           end;
                         false ->
                           {ok, ReqData}
                       end
                   end;
                 false ->
-                  {invalid, <<"Request age exceeds tolerance">>}
+                  Age = erlang:list_to_binary(io_lib:format("~B", [ReqAge])),
+                  {invalid, <<"Request age: ", Age/binary>>}
               end;
             _ ->
               {ok, ReqData}

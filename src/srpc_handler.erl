@@ -12,24 +12,24 @@
 %%
 %%------------------------------------------------------------------------------------------------
 -callback put(Key :: binary(), Value :: term(), 
-              Type :: exchange | lib | user | registration) ->
+              Type :: exchange | agreement | registration) ->
   ok | {error, Reason :: string()}.
 
 %%------------------------------------------------------------------------------------------------
 %% @doc Get value for Key in storage Type
 %%
 %%------------------------------------------------------------------------------------------------
--callback get(Key :: binary(), Type :: exchange | lib | user | registration) ->
+-callback get(Key :: binary(), Type :: exchange | agreement | registration) ->
   {ok, Value :: term()} | undefined.
 
 %%------------------------------------------------------------------------------------------------
 %% @doc Delete value for Key in storage Type
 %%
 %% Note Type does not include registration, which should be managed through an existing,
-%% valid lib or user client and hence should be handled via application API calls.
+%% valid client and hence should be handled via application API calls.
 %%
 %%------------------------------------------------------------------------------------------------
--callback delete(Key :: binary(), Type :: exchange | lib | user) ->
+-callback delete(Key :: binary(), Type :: exchange | agreement) ->
   ok | {error, Reason :: string()}.
 
 

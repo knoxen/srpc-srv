@@ -139,8 +139,8 @@ user_registration(ClientId, RegistrationRequest) ->
   case client_map_for_id(ClientId) of
     {ok, ClientMap} ->
       case srpc_lib:process_registration_request(ClientMap, RegistrationRequest) of
-        {ok, {RegistrationCode, SrpcUserData, SrpcReqData}} ->
-          UserId = maps:get(user_id, SrpcUserData),
+        {ok, {RegistrationCode, SrpcRegistrationData, SrpcReqData}} ->
+          UserId = maps:get(user_id, SrpcRegistrationData),
           case extract_req_data(SrpcReqData) of
             {ok, ReqRegistrationData} ->
               RespRegistrationData = 
@@ -151,11 +151,12 @@ user_registration(ClientId, RegistrationRequest) ->
                     <<>>
                 end,
               SrpcRespData = create_srpc_resp_data(RespRegistrationData),
+
               case RegistrationCode of
                 ?SRPC_REGISTRATION_CREATE ->
                   case app_srpc_handler:get(UserId, registration) of
                     undefined ->
-                      case app_srpc_handler:put(UserId, SrpcUserData, registration) of
+                      case app_srpc_handler:put(UserId, SrpcRegistrationData, registration) of
                         ok ->
                           srpc_lib:create_registration_response(ClientMap,
                                                                 ?SRPC_REGISTRATION_OK,
@@ -165,15 +166,15 @@ user_registration(ClientId, RegistrationRequest) ->
                                                                 ?SRPC_REGISTRATION_ERROR,
                                                                 SrpcRespData)
                       end;
-                    {ok, _SrpcUserData} ->
+                    {ok, _SrpcRegistrationData} ->
                       srpc_lib:create_registration_response(ClientMap,
                                                             ?SRPC_REGISTRATION_DUP,
                                                             SrpcRespData)
                   end;
                 ?SRPC_REGISTRATION_UPDATE ->
                   case app_srpc_handler:get(UserId, registration) of
-                    {ok, SrpcUserData} ->
-                      case app_srpc_handler:put(UserId, SrpcUserData, registration) of
+                    {ok, _PrevSrpcRegistrationData} ->
+                      case app_srpc_handler:put(UserId, SrpcRegistrationData, registration) of
                         ok ->
                           srpc_lib:create_registration_response(ClientMap,
                                                                 ?SRPC_REGISTRATION_OK,
@@ -231,9 +232,9 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
               SrpcRespData = create_srpc_resp_data(RespExchangeData),
 
               case app_srpc_handler:get(UserId, registration) of
-                {ok, SrpcUserData} ->
+                {ok, SrpcRegistrationData} ->
                   case srpc_lib:user_key_create_exchange_response(CryptClientMap,
-                                                                  SrpcUserData,
+                                                                  SrpcRegistrationData,
                                                                   ClientPublicKey, 
                                                                   SrpcRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->

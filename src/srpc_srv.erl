@@ -19,8 +19,8 @@
         ,user_registration/2
         ,user_key_exchange/2
         ,user_key_validate/2
-        ,encrypt_data/2
-        ,decrypt_data/2
+        ,encrypt_data/3
+        ,decrypt_data/3
         ,client_map_for_id/1
         ,server_epoch/2
         ,refresh/2
@@ -214,14 +214,13 @@ user_registration(ClientId, RegistrationRequest) ->
 %%   User Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-user_key_exchange(CryptClientId, ExchangeRequest) ->
-  case client_map_for_id(CryptClientId) of
-    {ok, CryptClientMap} ->
-      case srpc_lib:user_key_process_exchange_request(CryptClientMap, ExchangeRequest) of
+user_key_exchange(ClientId, ExchangeRequest) ->
+  case client_map_for_id(ClientId) of
+    {ok, ClientMap} ->
+      case srpc_lib:user_key_process_exchange_request(ClientMap, ExchangeRequest) of
         {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
           case extract_req_data(SrpcReqData) of
             {ok, ReqExchangeData} ->
-
               RespExchangeData = 
                 case erlang:function_exported(app_srpc_handler, user_key_exchange_data, 2) of
                   true ->
@@ -230,10 +229,9 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
                     <<>>
                 end,
               SrpcRespData = create_srpc_resp_data(RespExchangeData),
-
               case app_srpc_handler:get(UserId, registration) of
                 {ok, SrpcRegistrationData} ->
-                  case srpc_lib:user_key_create_exchange_response(CryptClientMap,
+                  case srpc_lib:user_key_create_exchange_response(ClientMap,
                                                                   SrpcRegistrationData,
                                                                   ClientPublicKey, 
                                                                   SrpcRespData) of
@@ -249,7 +247,7 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
                       Error
                   end;
                 undefined ->
-                  srpc_lib:user_key_create_exchange_response(CryptClientMap, invalid, 
+                  srpc_lib:user_key_create_exchange_response(ClientMap, invalid, 
                                                              ClientPublicKey, SrpcRespData)
               end;
             InvalidError ->
@@ -267,8 +265,8 @@ user_key_exchange(CryptClientId, ExchangeRequest) ->
 %%   User Key Validation
 %%
 %%------------------------------------------------------------------------------------------------
-user_key_validate(CryptClientId, ValidationRequest) ->
-  case client_map_for_id(CryptClientId) of
+user_key_validate(ClientId, ValidationRequest) ->
+  case client_map_for_id(ClientId) of
     {ok, CryptClientMap} ->
       case srpc_lib:user_key_process_validation_request(CryptClientMap, ValidationRequest) of
         {ok, {UserClientId, ClientChallenge, SrpcReqValidationData}} ->
@@ -325,12 +323,12 @@ server_epoch(ClientId, ServerEpochRequest) ->
   case client_map_for_id(ClientId) of
     {ok, ClientMap} ->
       %% To bypass req age check (which needs an accurate server epoch), don't use decrypt_data 
-      case srpc_lib:decrypt(ClientMap, ServerEpochRequest) of
+      case srpc_lib:decrypt(origin_client, ClientMap, ServerEpochRequest) of
         {ok, Nonce} ->
           DataEpoch = epoch_seconds(),
           RespData = <<DataEpoch:?EPOCH_BITS, Nonce/binary>>,
           %% Don't use encrypt_data since we're passing back the epoch directly (as resp data)
-          srpc_lib:encrypt(ClientMap, RespData);
+          srpc_lib:encrypt(origin_server, ClientMap, RespData);
         Error ->
           Error
       end;
@@ -346,12 +344,12 @@ server_epoch(ClientId, ServerEpochRequest) ->
 refresh(ClientId, RefreshRequest) ->
   case client_map_for_id(ClientId) of
     {ok, ClientMap} ->
-      case decrypt_data(ClientMap, RefreshRequest) of
+      case decrypt_data(origin_client, ClientMap, RefreshRequest) of
         {ok, Data} ->
           NewClientMap = srpc_lib:refresh_keys(ClientMap, Data),
           case app_srpc_handler:put(ClientId, NewClientMap, agreement) of
             ok ->
-              encrypt_data(NewClientMap, Data);
+              encrypt_data(origin_server, NewClientMap, Data);
             Error ->
               Error
           end;
@@ -370,10 +368,10 @@ refresh(ClientId, RefreshRequest) ->
 invalidate(ClientId, InvalidateRequest) ->
   case client_map_for_id(ClientId) of
     {ok, ClientMap} ->
-      case decrypt_data(ClientMap, InvalidateRequest) of
+      case decrypt_data(origin_client, ClientMap, InvalidateRequest) of
         {ok, ClientId} ->
           app_srpc_handler:delete(ClientId, agreement),
-          encrypt_data(ClientMap, ClientId);
+          encrypt_data(origin_server, ClientMap, ClientId);
         {ok, _ClientId} ->
           {error, <<"Attempt to invalidate another ClientId">>};
         Error ->
@@ -411,12 +409,12 @@ client_map_for_id(ClientId) ->
 %% Encrypt / Decrypt
 %%
 %%================================================================================================
-encrypt_data(ClientMap, Data) ->
+encrypt_data(Origin, ClientMap, Data) ->
   SrpcData = create_srpc_resp_data(Data),
-  srpc_lib:encrypt(ClientMap, SrpcData).
+  srpc_lib:encrypt(Origin, ClientMap, SrpcData).
 
-decrypt_data(ClientMap, Data) ->
-  case srpc_lib:decrypt(ClientMap, Data) of
+decrypt_data(Origin, ClientMap, Data) ->
+  case srpc_lib:decrypt(Origin, ClientMap, Data) of
     {ok, SrpcData} ->
       extract_req_data(SrpcData);
     InvalidError ->

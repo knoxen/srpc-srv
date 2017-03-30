@@ -15,10 +15,10 @@
 %%
 %%================================================================================================
 -export([lib_key_exchange/1
-        ,lib_key_validate/2
+        ,lib_key_confirm/2
         ,user_registration/2
         ,user_key_exchange/2
-        ,user_key_validate/2
+        ,user_key_confirm/2
         ,encrypt_data/3
         ,decrypt_data/3
         ,client_map_for_id/1
@@ -86,39 +86,39 @@ lib_key_exchange(ExchangeRequest) ->
 
 %%------------------------------------------------------------------------------------------------
 %%
-%%   Lib Key Validate
+%%   Lib Key Confirm
 %%
 %%------------------------------------------------------------------------------------------------
-lib_key_validate(ClientId, ValidationRequest) ->
+lib_key_confirm(ClientId, ConfirmRequest) ->
   case app_srpc_handler:get(ClientId, exchange) of
     {ok, ExchangeMap} ->
       app_srpc_handler:delete(ClientId, exchange),
-      case srpc_lib:lib_key_process_validation_request(ExchangeMap, ValidationRequest) of
+      case srpc_lib:lib_key_process_confirm_request(ExchangeMap, ConfirmRequest) of
         {ok, {_ReqClientId, ClientChallenge, SrpcReqData}} ->
-          {Nonce, ValidationReqData} = extract_nonce_req_data(SrpcReqData),
+          {Nonce, ConfirmReqData} = extract_nonce_req_data(SrpcReqData),
           case Nonce of
             error ->
-              {Nonce, ValidationReqData};
+              {Nonce, ConfirmReqData};
             _ ->
-              ValidationRespData = 
-                case erlang:function_exported(app_srpc_handler, lib_key_validation_data, 1) of
+              ConfirmRespData = 
+                case erlang:function_exported(app_srpc_handler, lib_key_confirm_data, 1) of
                   true ->
-                    app_srpc_handler:lib_key_validation_data(ValidationReqData);
+                    app_srpc_handler:lib_key_confirm_data(ConfirmReqData);
                   false ->
                     <<>>
                 end,
-              SrpcRespData = create_srpc_resp_data(ValidationRespData),
-              case srpc_lib:lib_key_create_validation_response(ExchangeMap, ClientChallenge,
+              SrpcRespData = create_srpc_resp_data(ConfirmRespData),
+              case srpc_lib:lib_key_create_confirm_response(ExchangeMap, ClientChallenge,
                                                                SrpcRespData) of
-                {ok, ClientMap, ValidationResponse} ->
+                {ok, ClientMap, ConfirmResponse} ->
                   case app_srpc_handler:put(ClientId, ClientMap, key) of
                     ok ->
-                      {ok, ValidationResponse};
+                      {ok, ConfirmResponse};
                     Error ->
                       Error
                   end;
-                {invalid, _ClientMap, ValidationResponse} ->
-                  {ok, ValidationResponse};
+                {invalid, _ClientMap, ConfirmResponse} ->
+                  {ok, ConfirmResponse};
                 Error ->
                   Error
               end
@@ -262,52 +262,52 @@ user_key_exchange(ClientId, ExchangeRequest) ->
 
 %%------------------------------------------------------------------------------------------------
 %%
-%%   User Key Validation
+%%   User Key Confirm
 %%
 %%------------------------------------------------------------------------------------------------
-user_key_validate(ClientId, ValidationRequest) ->
+user_key_confirm(ClientId, ConfirmRequest) ->
   case client_map_for_id(ClientId) of
     {ok, CryptClientMap} ->
-      case srpc_lib:user_key_process_validation_request(CryptClientMap, ValidationRequest) of
-        {ok, {UserClientId, ClientChallenge, SrpcReqValidationData}} ->
+      case srpc_lib:user_key_process_confirm_request(CryptClientMap, ConfirmRequest) of
+        {ok, {UserClientId, ClientChallenge, SrpcReqConfirmData}} ->
           case app_srpc_handler:get(UserClientId, exchange) of
             {ok, ExchangeMap} ->
               app_srpc_handler:delete(UserClientId, exchange),
-              case extract_req_data(SrpcReqValidationData) of
-                {ok, ReqValidationData} ->
+              case extract_req_data(SrpcReqConfirmData) of
+                {ok, ReqConfirmData} ->
                   UserId = maps:get(entity_id, ExchangeMap),
-                  RespValidationData = 
-                    case erlang:function_exported(app_srpc_handler, user_key_validation_data, 2) of
+                  RespConfirmData = 
+                    case erlang:function_exported(app_srpc_handler, user_key_confirm_data, 2) of
                       true ->
-                        app_srpc_handler:user_key_validation_data(UserId, ReqValidationData);
+                        app_srpc_handler:user_key_confirm_data(UserId, ReqConfirmData);
                       false ->
                         <<>>
                     end,
-                  SrpcRespData = create_srpc_resp_data(RespValidationData),
-                  case srpc_lib:user_key_create_validation_response(CryptClientMap, ExchangeMap,
+                  SrpcRespData = create_srpc_resp_data(RespConfirmData),
+                  case srpc_lib:user_key_create_confirm_response(CryptClientMap, ExchangeMap,
                                                                     ClientChallenge,
                                                                     SrpcRespData) of
-                    {ok, ClientMap, ValidationResponse} ->
+                    {ok, ClientMap, ConfirmResponse} ->
                       ClientMap2 = maps:put(client_id, UserClientId, ClientMap),
                       case app_srpc_handler:put(UserClientId, ClientMap2, key) of
                         ok ->
-                          {ok, ValidationResponse};
+                          {ok, ConfirmResponse};
                         Error ->
                           Error
                       end;
-                    {invalid, _ClientMap, ValidationResponse} ->
+                    {invalid, _ClientMap, ConfirmResponse} ->
                       %% CxTBD Report invalid
-                      {ok, ValidationResponse}
+                      {ok, ConfirmResponse}
                   end;
                 InvalidError ->
                   InvalidError
               end;
             undefined ->
               SrpcRespData = create_srpc_resp_data(<<>>),
-              {_, _ClientMap, ValidationResponse} =
-                srpc_lib:user_key_create_validation_response(CryptClientMap, invalid,
+              {_, _ClientMap, ConfirmResponse} =
+                srpc_lib:user_key_create_confirm_response(CryptClientMap, invalid,
                                                              ClientChallenge, SrpcRespData),
-              {ok, ValidationResponse}
+              {ok, ConfirmResponse}
           end
       end;
     Invalid ->

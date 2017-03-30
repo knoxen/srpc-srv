@@ -111,7 +111,7 @@ lib_key_validate(ClientId, ValidationRequest) ->
               case srpc_lib:lib_key_create_validation_response(ExchangeMap, ClientChallenge,
                                                                SrpcRespData) of
                 {ok, ClientMap, ValidationResponse} ->
-                  case app_srpc_handler:put(ClientId, ClientMap, agreement) of
+                  case app_srpc_handler:put(ClientId, ClientMap, key) of
                     ok ->
                       {ok, ValidationResponse};
                     Error ->
@@ -289,7 +289,7 @@ user_key_validate(ClientId, ValidationRequest) ->
                                                                     SrpcRespData) of
                     {ok, ClientMap, ValidationResponse} ->
                       ClientMap2 = maps:put(client_id, UserClientId, ClientMap),
-                      case app_srpc_handler:put(UserClientId, ClientMap2, agreement) of
+                      case app_srpc_handler:put(UserClientId, ClientMap2, key) of
                         ok ->
                           {ok, ValidationResponse};
                         Error ->
@@ -347,7 +347,7 @@ refresh(ClientId, RefreshRequest) ->
       case decrypt_data(origin_client, ClientMap, RefreshRequest) of
         {ok, Data} ->
           NewClientMap = srpc_lib:refresh_keys(ClientMap, Data),
-          case app_srpc_handler:put(ClientId, NewClientMap, agreement) of
+          case app_srpc_handler:put(ClientId, NewClientMap, key) of
             ok ->
               encrypt_data(origin_server, NewClientMap, Data);
             Error ->
@@ -370,7 +370,7 @@ invalidate(ClientId, InvalidateRequest) ->
     {ok, ClientMap} ->
       case decrypt_data(origin_client, ClientMap, InvalidateRequest) of
         {ok, ClientId} ->
-          app_srpc_handler:delete(ClientId, agreement),
+          app_srpc_handler:delete(ClientId, key),
           encrypt_data(origin_server, ClientMap, ClientId);
         {ok, _ClientId} ->
           {error, <<"Attempt to invalidate another ClientId">>};
@@ -394,7 +394,7 @@ invalidate(ClientId, InvalidateRequest) ->
 client_map_for_id(ClientId) ->
   case app_srpc_handler:get(ClientId, exchange) of
     undefined ->
-      case app_srpc_handler:get(ClientId, agreement) of
+      case app_srpc_handler:get(ClientId, key) of
         undefined ->
           {invalid, <<"Invalid ClientId: ", ClientId/binary>>};
         Result ->

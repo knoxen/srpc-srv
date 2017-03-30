@@ -12,14 +12,14 @@
 %%
 %%------------------------------------------------------------------------------------------------
 -callback put(Key :: binary(), Value :: term(), 
-              Type :: exchange | agreement | registration) ->
+              Type :: exchange | key | registration) ->
   ok | {error, Reason :: string()}.
 
 %%------------------------------------------------------------------------------------------------
 %% @doc Get value for Key in storage Type
 %%
 %%------------------------------------------------------------------------------------------------
--callback get(Key :: binary(), Type :: exchange | agreement | registration) ->
+-callback get(Key :: binary(), Type :: exchange | key | registration) ->
   {ok, Value :: term()} | undefined.
 
 %%------------------------------------------------------------------------------------------------
@@ -29,7 +29,7 @@
 %% valid client and hence should be handled via application API calls.
 %%
 %%------------------------------------------------------------------------------------------------
--callback delete(Key :: binary(), Type :: exchange | agreement) ->
+-callback delete(Key :: binary(), Type :: exchange | key) ->
   ok | {error, Reason :: string()}.
 
 

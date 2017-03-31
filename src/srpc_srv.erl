@@ -14,11 +14,11 @@
 %% API exports
 %%
 %%================================================================================================
--export([lib_key_exchange/1
-        ,lib_key_confirm/2
-        ,user_registration/2
-        ,user_key_exchange/2
-        ,user_key_confirm/2
+-export([lib_exchange/1
+        ,lib_confirm/2
+        ,registration/2
+        ,user_exchange/2
+        ,user_confirm/2
         ,encrypt_data/3
         ,decrypt_data/3
         ,client_map_for_id/1
@@ -58,13 +58,13 @@
 %%   Lib Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-lib_key_exchange(ExchangeRequest) ->
+lib_exchange(ExchangeRequest) ->
   case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of
     {ok, {ClientPublicKey, ReqExchangeData}} ->
       RespExchangeData = 
-        case erlang:function_exported(app_srpc_handler, lib_key_exchange_data, 1) of
+        case erlang:function_exported(app_srpc_handler, lib_exchange_data, 1) of
           true ->
-            app_srpc_handler:lib_key_exchange_data(ReqExchangeData);
+            app_srpc_handler:lib_exchange_data(ReqExchangeData);
           false ->
             <<>>
         end,
@@ -89,7 +89,7 @@ lib_key_exchange(ExchangeRequest) ->
 %%   Lib Key Confirm
 %%
 %%------------------------------------------------------------------------------------------------
-lib_key_confirm(ClientId, ConfirmRequest) ->
+lib_confirm(ClientId, ConfirmRequest) ->
   case app_srpc_handler:get(ClientId, exchange) of
     {ok, ExchangeMap} ->
       app_srpc_handler:delete(ClientId, exchange),
@@ -101,9 +101,9 @@ lib_key_confirm(ClientId, ConfirmRequest) ->
               {Nonce, ConfirmReqData};
             _ ->
               ConfirmRespData = 
-                case erlang:function_exported(app_srpc_handler, lib_key_confirm_data, 1) of
+                case erlang:function_exported(app_srpc_handler, lib_confirm_data, 1) of
                   true ->
-                    app_srpc_handler:lib_key_confirm_data(ConfirmReqData);
+                    app_srpc_handler:lib_confirm_data(ConfirmReqData);
                   false ->
                     <<>>
                 end,
@@ -132,10 +132,10 @@ lib_key_confirm(ClientId, ConfirmRequest) ->
 
 %%================================================================================================
 %%
-%% User Registration
+%% Registration
 %%
 %%================================================================================================
-user_registration(ClientId, RegistrationRequest) ->
+registration(ClientId, RegistrationRequest) ->
   case client_map_for_id(ClientId) of
     {ok, ClientMap} ->
       case srpc_lib:process_registration_request(ClientMap, RegistrationRequest) of
@@ -214,7 +214,7 @@ user_registration(ClientId, RegistrationRequest) ->
 %%   User Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-user_key_exchange(ClientId, ExchangeRequest) ->
+user_exchange(ClientId, ExchangeRequest) ->
   case client_map_for_id(ClientId) of
     {ok, ClientMap} ->
       case srpc_lib:user_key_process_exchange_request(ClientMap, ExchangeRequest) of
@@ -222,9 +222,9 @@ user_key_exchange(ClientId, ExchangeRequest) ->
           case extract_req_data(SrpcReqData) of
             {ok, ReqExchangeData} ->
               RespExchangeData = 
-                case erlang:function_exported(app_srpc_handler, user_key_exchange_data, 2) of
+                case erlang:function_exported(app_srpc_handler, user_exchange_data, 2) of
                   true ->
-                    app_srpc_handler:user_key_exchange_data(UserId, ReqExchangeData);
+                    app_srpc_handler:user_exchange_data(UserId, ReqExchangeData);
                   false ->
                     <<>>
                 end,
@@ -265,7 +265,7 @@ user_key_exchange(ClientId, ExchangeRequest) ->
 %%   User Key Confirm
 %%
 %%------------------------------------------------------------------------------------------------
-user_key_confirm(ClientId, ConfirmRequest) ->
+user_confirm(ClientId, ConfirmRequest) ->
   case client_map_for_id(ClientId) of
     {ok, CryptClientMap} ->
       case srpc_lib:user_key_process_confirm_request(CryptClientMap, ConfirmRequest) of
@@ -277,9 +277,9 @@ user_key_confirm(ClientId, ConfirmRequest) ->
                 {ok, ReqConfirmData} ->
                   UserId = maps:get(entity_id, ExchangeMap),
                   RespConfirmData = 
-                    case erlang:function_exported(app_srpc_handler, user_key_confirm_data, 2) of
+                    case erlang:function_exported(app_srpc_handler, user_confirm_data, 2) of
                       true ->
-                        app_srpc_handler:user_key_confirm_data(UserId, ReqConfirmData);
+                        app_srpc_handler:user_confirm_data(UserId, ReqConfirmData);
                       false ->
                         <<>>
                     end,

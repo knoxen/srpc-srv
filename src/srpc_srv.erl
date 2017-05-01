@@ -24,7 +24,7 @@
         ,client_map_for_id/1
         ,server_epoch/2
         ,refresh/2
-        ,invalidate/2
+        ,close/2
         ]).
 
 -define(APP_NAME, srpc_srv).
@@ -362,18 +362,18 @@ refresh(ClientId, RefreshRequest) ->
 
 %%================================================================================================
 %%
-%% Client Invalidate
+%% Client Close
 %%
 %%================================================================================================
-invalidate(ClientId, InvalidateRequest) ->
+close(ClientId, CloseRequest) ->
   case client_map_for_id(ClientId) of
     {ok, ClientMap} ->
-      case decrypt_data(origin_client, ClientMap, InvalidateRequest) of
+      case decrypt_data(origin_client, ClientMap, CloseRequest) of
         {ok, ClientId} ->
           app_srpc_handler:delete(ClientId, key),
           encrypt_data(origin_server, ClientMap, ClientId);
         {ok, _ClientId} ->
-          {error, <<"Attempt to invalidate another ClientId">>};
+          {error, <<"Attempt to close another ClientId">>};
         Error ->
           Error
       end;

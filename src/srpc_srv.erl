@@ -391,7 +391,7 @@ close(ClientId, CloseRequest) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-client_map_for_id(ClientId) ->
+client_map_for_id(ClientId) when is_binary(ClientId) ->
   case app_srpc_handler:get(ClientId, exchange) of
     undefined ->
       case app_srpc_handler:get(ClientId, key) of
@@ -402,7 +402,9 @@ client_map_for_id(ClientId) ->
       end;
     Result ->
       Result
-  end.
+  end;
+client_map_for_id(_) ->
+  {invalid, <<"Invalid ClientId: Missing">>}.
 
 %%================================================================================================
 %%

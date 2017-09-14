@@ -2,7 +2,7 @@
 
 -author("paul@knoxen.com").
 
--type storage() :: exchange | key | registration
+-type storage() :: exchange | key | registration.
 
 %%================================================================================================
 %% @doc SRPC handler functions

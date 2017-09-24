@@ -8,7 +8,6 @@
 %% the explicit, hard-coded module name.
 %%
 
-
 %%================================================================================================
 %%
 %% API exports
@@ -19,9 +18,9 @@
         ,registration/2
         ,user_exchange/2
         ,user_confirm/2
-        ,encrypt_data/3
-        ,decrypt_data/3
-        ,client_map_for_id/1
+        ,encrypt/3
+        ,decrypt/3
+        ,client_info/1
         ,server_epoch/2
         ,refresh/2
         ,close/2
@@ -33,8 +32,6 @@
 -define(HDR_BITS,    8).
 -define(EPOCH_BITS, 32).
 -define(NONCE_BITS,  8).
-
--define(LIB_KEY_VAL_EPOCH, <<255,255,255,255>>).
 
 %%================================================================================================
 %%
@@ -110,14 +107,14 @@ lib_confirm(ClientId, ConfirmRequest) ->
               SrpcRespData = create_srpc_resp_data(ConfirmRespData),
               case srpc_lib:lib_key_create_confirm_response(ExchangeMap, ClientChallenge,
                                                                SrpcRespData) of
-                {ok, ClientMap, ConfirmResponse} ->
-                  case app_srpc_handler:put(ClientId, ClientMap, key) of
+                {ok, ClientInfo, ConfirmResponse} ->
+                  case app_srpc_handler:put(ClientId, ClientInfo, key) of
                     ok ->
                       {ok, ConfirmResponse};
                     Error ->
                       Error
                   end;
-                {invalid, _ClientMap, ConfirmResponse} ->
+                {invalid, _ClientInfo, ConfirmResponse} ->
                   {ok, ConfirmResponse};
                 Error ->
                   Error
@@ -136,9 +133,9 @@ lib_confirm(ClientId, ConfirmRequest) ->
 %%
 %%================================================================================================
 registration(ClientId, RegistrationRequest) ->
-  case client_map_for_id(ClientId) of
-    {ok, ClientMap} ->
-      case srpc_lib:process_registration_request(ClientMap, RegistrationRequest) of
+  case client_info(ClientId) of
+    {ok, ClientInfo} ->
+      case srpc_lib:process_registration_request(ClientInfo, RegistrationRequest) of
         {ok, {RegistrationCode, SrpcRegistrationData, SrpcReqData}} ->
           UserId = maps:get(user_id, SrpcRegistrationData),
           case extract_req_data(SrpcReqData) of
@@ -158,16 +155,16 @@ registration(ClientId, RegistrationRequest) ->
                     undefined ->
                       case app_srpc_handler:put(UserId, SrpcRegistrationData, registration) of
                         ok ->
-                          srpc_lib:create_registration_response(ClientMap,
+                          srpc_lib:create_registration_response(ClientInfo,
                                                                 ?SRPC_REGISTRATION_OK,
                                                                 SrpcRespData);
                         _Error ->
-                          srpc_lib:create_registration_response(ClientMap,
+                          srpc_lib:create_registration_response(ClientInfo,
                                                                 ?SRPC_REGISTRATION_ERROR,
                                                                 SrpcRespData)
                       end;
                     {ok, _SrpcRegistrationData} ->
-                      srpc_lib:create_registration_response(ClientMap,
+                      srpc_lib:create_registration_response(ClientInfo,
                                                             ?SRPC_REGISTRATION_DUP,
                                                             SrpcRespData)
                   end;
@@ -176,21 +173,21 @@ registration(ClientId, RegistrationRequest) ->
                     {ok, _PrevSrpcRegistrationData} ->
                       case app_srpc_handler:put(UserId, SrpcRegistrationData, registration) of
                         ok ->
-                          srpc_lib:create_registration_response(ClientMap,
+                          srpc_lib:create_registration_response(ClientInfo,
                                                                 ?SRPC_REGISTRATION_OK,
                                                                 SrpcRespData);
                         _Error ->
-                          srpc_lib:create_registration_response(ClientMap,
+                          srpc_lib:create_registration_response(ClientInfo,
                                                                 ?SRPC_REGISTRATION_ERROR,
                                                                 SrpcRespData)
                       end;
                     undefined ->
-                      srpc_lib:create_registration_response(ClientMap,
+                      srpc_lib:create_registration_response(ClientInfo,
                                                             ?SRPC_REGISTRATION_NOT_FOUND,
                                                             SrpcRespData)
                   end;
                 _ ->
-                  srpc_lib:create_registration_response(ClientMap,
+                  srpc_lib:create_registration_response(ClientInfo,
                                                         ?SRPC_REGISTRATION_ERROR,
                                                         SrpcRespData)
               end;
@@ -215,9 +212,9 @@ registration(ClientId, RegistrationRequest) ->
 %%
 %%------------------------------------------------------------------------------------------------
 user_exchange(ClientId, ExchangeRequest) ->
-  case client_map_for_id(ClientId) of
-    {ok, ClientMap} ->
-      case srpc_lib:user_key_process_exchange_request(ClientMap, ExchangeRequest) of
+  case client_info(ClientId) of
+    {ok, ClientInfo} ->
+      case srpc_lib:user_key_process_exchange_request(ClientInfo, ExchangeRequest) of
         {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
           case extract_req_data(SrpcReqData) of
             {ok, ReqExchangeData} ->
@@ -231,7 +228,7 @@ user_exchange(ClientId, ExchangeRequest) ->
               SrpcRespData = create_srpc_resp_data(RespExchangeData),
               case app_srpc_handler:get(UserId, registration) of
                 {ok, SrpcRegistrationData} ->
-                  case srpc_lib:user_key_create_exchange_response(ClientMap,
+                  case srpc_lib:user_key_create_exchange_response(ClientInfo,
                                                                   SrpcRegistrationData,
                                                                   ClientPublicKey, 
                                                                   SrpcRespData) of
@@ -247,7 +244,7 @@ user_exchange(ClientId, ExchangeRequest) ->
                       Error
                   end;
                 undefined ->
-                  srpc_lib:user_key_create_exchange_response(ClientMap, invalid, 
+                  srpc_lib:user_key_create_exchange_response(ClientInfo, invalid, 
                                                              ClientPublicKey, SrpcRespData)
               end;
             InvalidError ->
@@ -266,9 +263,9 @@ user_exchange(ClientId, ExchangeRequest) ->
 %%
 %%------------------------------------------------------------------------------------------------
 user_confirm(ClientId, ConfirmRequest) ->
-  case client_map_for_id(ClientId) of
-    {ok, CryptClientMap} ->
-      case srpc_lib:user_key_process_confirm_request(CryptClientMap, ConfirmRequest) of
+  case client_info(ClientId) of
+    {ok, CryptClientInfo} ->
+      case srpc_lib:user_key_process_confirm_request(CryptClientInfo, ConfirmRequest) of
         {ok, {UserClientId, ClientChallenge, SrpcReqConfirmData}} ->
           case app_srpc_handler:get(UserClientId, exchange) of
             {ok, ExchangeMap} ->
@@ -284,18 +281,18 @@ user_confirm(ClientId, ConfirmRequest) ->
                         <<>>
                     end,
                   SrpcRespData = create_srpc_resp_data(RespConfirmData),
-                  case srpc_lib:user_key_create_confirm_response(CryptClientMap, ExchangeMap,
+                  case srpc_lib:user_key_create_confirm_response(CryptClientInfo, ExchangeMap,
                                                                     ClientChallenge,
                                                                     SrpcRespData) of
-                    {ok, ClientMap, ConfirmResponse} ->
-                      ClientMap2 = maps:put(client_id, UserClientId, ClientMap),
-                      case app_srpc_handler:put(UserClientId, ClientMap2, key) of
+                    {ok, ClientInfo, ConfirmResponse} ->
+                      ClientInfo2 = maps:put(client_id, UserClientId, ClientInfo),
+                      case app_srpc_handler:put(UserClientId, ClientInfo2, key) of
                         ok ->
                           {ok, ConfirmResponse};
                         Error ->
                           Error
                       end;
-                    {invalid, _ClientMap, ConfirmResponse} ->
+                    {invalid, _ClientInfo, ConfirmResponse} ->
                       %% CxTBD Report invalid
                       {ok, ConfirmResponse}
                   end;
@@ -304,8 +301,8 @@ user_confirm(ClientId, ConfirmRequest) ->
               end;
             undefined ->
               SrpcRespData = create_srpc_resp_data(<<>>),
-              {_, _ClientMap, ConfirmResponse} =
-                srpc_lib:user_key_create_confirm_response(CryptClientMap, invalid,
+              {_, _ClientInfo, ConfirmResponse} =
+                srpc_lib:user_key_create_confirm_response(CryptClientInfo, invalid,
                                                              ClientChallenge, SrpcRespData),
               {ok, ConfirmResponse}
           end
@@ -320,15 +317,15 @@ user_confirm(ClientId, ConfirmRequest) ->
 %%
 %%================================================================================================
 server_epoch(ClientId, ServerEpochRequest) ->
-  case client_map_for_id(ClientId) of
-    {ok, ClientMap} ->
-      %% To bypass req age check (which needs an accurate server epoch), don't use decrypt_data 
-      case srpc_lib:decrypt(origin_client, ClientMap, ServerEpochRequest) of
+  case client_info(ClientId) of
+    {ok, ClientInfo} ->
+      %% To bypass req age check (which needs an accurate server epoch), don't use srpc_srv:decrypt
+      case srpc_lib:decrypt(origin_client, ClientInfo, ServerEpochRequest) of
         {ok, Nonce} ->
           DataEpoch = epoch_seconds(),
           RespData = <<DataEpoch:?EPOCH_BITS, Nonce/binary>>,
-          %% Don't use encrypt_data since we're passing back the epoch directly (as resp data)
-          srpc_lib:encrypt(origin_server, ClientMap, RespData);
+          %% Don't use srpc_srv:encrypt since we're passing back the epoch directly (as resp data)
+          srpc_lib:encrypt(origin_server, ClientInfo, RespData);
         Error ->
           Error
       end;
@@ -342,14 +339,14 @@ server_epoch(ClientId, ServerEpochRequest) ->
 %%
 %%================================================================================================
 refresh(ClientId, RefreshRequest) ->
-  case client_map_for_id(ClientId) of
-    {ok, ClientMap} ->
-      case decrypt_data(origin_client, ClientMap, RefreshRequest) of
+  case client_info(ClientId) of
+    {ok, ClientInfo} ->
+      case decrypt(origin_client, ClientInfo, RefreshRequest) of
         {ok, Data} ->
-          NewClientMap = srpc_lib:refresh_keys(ClientMap, Data),
-          case app_srpc_handler:put(ClientId, NewClientMap, key) of
+          NewClientInfo = srpc_lib:refresh_keys(ClientInfo, Data),
+          case app_srpc_handler:put(ClientId, NewClientInfo, key) of
             ok ->
-              encrypt_data(origin_server, NewClientMap, Data);
+              encrypt(origin_server, NewClientInfo, Data);
             Error ->
               Error
           end;
@@ -366,12 +363,12 @@ refresh(ClientId, RefreshRequest) ->
 %%
 %%================================================================================================
 close(ClientId, CloseRequest) ->
-  case client_map_for_id(ClientId) of
-    {ok, ClientMap} ->
-      case decrypt_data(origin_client, ClientMap, CloseRequest) of
+  case client_info(ClientId) of
+    {ok, ClientInfo} ->
+      case decrypt(origin_client, ClientInfo, CloseRequest) of
         {ok, ClientId} ->
           app_srpc_handler:delete(ClientId, key),
-          encrypt_data(origin_server, ClientMap, ClientId);
+          encrypt(origin_server, ClientInfo, ClientId);
         {ok, _ClientId} ->
           {error, <<"Attempt to close another ClientId">>};
         Error ->
@@ -391,7 +388,7 @@ close(ClientId, CloseRequest) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-client_map_for_id(ClientId) when is_binary(ClientId) ->
+client_info(ClientId) when is_binary(ClientId) ->
   case app_srpc_handler:get(ClientId, exchange) of
     undefined ->
       case app_srpc_handler:get(ClientId, key) of
@@ -403,7 +400,7 @@ client_map_for_id(ClientId) when is_binary(ClientId) ->
     Result ->
       Result
   end;
-client_map_for_id(_) ->
+client_info(_) ->
   {invalid, <<"Invalid ClientId: Missing">>}.
 
 %%================================================================================================
@@ -411,12 +408,12 @@ client_map_for_id(_) ->
 %% Encrypt / Decrypt
 %%
 %%================================================================================================
-encrypt_data(Origin, ClientMap, Data) ->
+encrypt(Origin, ClientInfo, Data) ->
   SrpcData = create_srpc_resp_data(Data),
-  srpc_lib:encrypt(Origin, ClientMap, SrpcData).
+  srpc_lib:encrypt(Origin, ClientInfo, SrpcData).
 
-decrypt_data(Origin, ClientMap, Data) ->
-  case srpc_lib:decrypt(Origin, ClientMap, Data) of
+decrypt(Origin, ClientInfo, Data) ->
+  case srpc_lib:decrypt(Origin, ClientInfo, Data) of
     {ok, SrpcData} ->
       extract_req_data(SrpcData);
     InvalidError ->

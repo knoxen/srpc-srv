@@ -13,7 +13,7 @@
 %% API exports
 %%
 %%================================================================================================
--export([lib_exchange/1
+-export([lib_exchange/2
         ,lib_confirm/2
         ,registration/2
         ,user_exchange/2
@@ -26,8 +26,11 @@
         ,close/2
         ]).
 
--define(APP_NAME, srpc_srv).
-
+%%================================================================================================
+%%
+%% Registration Codes
+%%
+%%================================================================================================
 -define(HDR_VSN,     1).
 -define(HDR_BITS,    8).
 -define(EPOCH_BITS, 32).
@@ -55,7 +58,7 @@
 %%   Lib Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-lib_exchange(ExchangeRequest) ->
+lib_exchange(ClientId, ExchangeRequest) ->
   case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of
     {ok, {ClientPublicKey, ReqExchangeData}} ->
       RespExchangeData = 
@@ -65,7 +68,7 @@ lib_exchange(ExchangeRequest) ->
           false ->
             <<>>
         end,
-      case srpc_lib:lib_key_create_exchange_response(ClientPublicKey, RespExchangeData) of
+      case srpc_lib:lib_key_create_exchange_response(ClientId, ClientPublicKey, RespExchangeData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
           ClientId = maps:get(client_id, ExchangeMap),
           case app_srpc_handler:put(ClientId, ExchangeMap, exchange) of
@@ -228,7 +231,8 @@ user_exchange(ClientId, ExchangeRequest) ->
               SrpcRespData = create_srpc_resp_data(RespExchangeData),
               case app_srpc_handler:get(UserId, registration) of
                 {ok, SrpcRegistrationData} ->
-                  case srpc_lib:user_key_create_exchange_response(ClientInfo,
+                  case srpc_lib:user_key_create_exchange_response(ClientId,
+                                                                  ClientInfo,
                                                                   SrpcRegistrationData,
                                                                   ClientPublicKey, 
                                                                   SrpcRespData) of

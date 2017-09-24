@@ -1,11 +1,11 @@
 {application, srpc_srv,
- [{description, "Srpc Server"}
+ [{description, "Knoxen SRPC Server"}
  ,{vsn, git}
  ,{registered, []}
  ,{applications,
-    [kernel
-    ,stdlib
-    ]}
+   [kernel
+   ,stdlib
+   ]}
  ,{env, []}
  ,{modules, []}
  ]}.

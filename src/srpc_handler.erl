@@ -37,12 +37,6 @@
 
 %% CxTBD Optional functions
 %%
-%% client_id_bits/0
-%%   - Number of entropy bits for client IDs
-%%
-%% client_id_charset/0
-%%   - Charset for client IDs
-%%
 %% req_age_tolerance/0
 %%   - Max time in seconds to consider a request as valid
 %%

@@ -13,11 +13,10 @@
 %% API exports
 %%
 %%================================================================================================
+-export([srpc_action/1]).
+
 -export([lib_exchange/2
-        ,lib_confirm/2
         ,registration/2
-        ,user_exchange/2
-        ,user_confirm/2
         ,encrypt/3
         ,decrypt/3
         ,client_info/1
@@ -47,6 +46,30 @@
 -define(SRPC_REGISTRATION_DUP,        11).
 -define(SRPC_REGISTRATION_NOT_FOUND,  12).
 -define(SRPC_REGISTRATION_ERROR,     255).
+
+srpc_action(<< IdLen:8, ClientId:IdLen/binary, SrpcAction:8, ActionData/binary >>) ->
+  ActionResp = srpc_action(SrpcAction, ClientId, ActionData),
+  {SrpcAction, ActionResp};
+srpc_action(_) ->
+  {undefined, {error, <<"Invalid srpc action packet">>}}.
+
+srpc_action(16#01, ClientId, ActionData) ->
+  lib_confirm(ClientId, ActionData);
+srpc_action(16#10, ClientId, ActionData) ->
+  registration(ClientId, ActionData);
+srpc_action(16#20, ClientId, ActionData) ->
+  user_exchange(ClientId, ActionData);
+srpc_action(16#21, ClientId, ActionData) ->
+  user_confirm(ClientId, ActionData);
+srpc_action(16#30, ClientId, ActionData) ->
+  server_epoch(ClientId, ActionData);
+srpc_action(16#40, ClientId, ActionData) ->
+  refresh(ClientId, ActionData);
+srpc_action(16#ff, ClientId, ActionData) ->
+  close(ClientId, ActionData);
+srpc_action(_, _ClientId, _ActionData) ->
+  {error, <<"Invalid srpc action">>}.
+
 
 %%================================================================================================
 %%
@@ -94,7 +117,7 @@ lib_confirm(ClientId, ConfirmRequest) ->
     {ok, ExchangeMap} ->
       app_srpc_handler:delete(ClientId, exchange),
       case srpc_lib:lib_key_process_confirm_request(ExchangeMap, ConfirmRequest) of
-        {ok, {_ReqClientId, ClientChallenge, SrpcReqData}} ->
+        {ok, {ClientChallenge, SrpcReqData}} ->
           {Nonce, ConfirmReqData} = extract_nonce_req_data(SrpcReqData),
           case Nonce of
             error ->
@@ -270,10 +293,10 @@ user_confirm(ClientId, ConfirmRequest) ->
   case client_info(ClientId) of
     {ok, CryptClientInfo} ->
       case srpc_lib:user_key_process_confirm_request(CryptClientInfo, ConfirmRequest) of
-        {ok, {UserClientId, ClientChallenge, SrpcReqConfirmData}} ->
-          case app_srpc_handler:get(UserClientId, exchange) of
+        {ok, {ClientChallenge, SrpcReqConfirmData}} ->
+          case app_srpc_handler:get(ClientId, exchange) of
             {ok, ExchangeMap} ->
-              app_srpc_handler:delete(UserClientId, exchange),
+              app_srpc_handler:delete(ClientId, exchange),
               case extract_req_data(SrpcReqConfirmData) of
                 {ok, ReqConfirmData} ->
                   UserId = maps:get(entity_id, ExchangeMap),
@@ -286,11 +309,11 @@ user_confirm(ClientId, ConfirmRequest) ->
                     end,
                   SrpcRespData = create_srpc_resp_data(RespConfirmData),
                   case srpc_lib:user_key_create_confirm_response(CryptClientInfo, ExchangeMap,
-                                                                    ClientChallenge,
-                                                                    SrpcRespData) of
+                                                                 ClientChallenge,
+                                                                 SrpcRespData) of
                     {ok, ClientInfo, ConfirmResponse} ->
-                      ClientInfo2 = maps:put(client_id, UserClientId, ClientInfo),
-                      case app_srpc_handler:put(UserClientId, ClientInfo2, key) of
+                      ClientInfo2 = maps:put(client_id, ClientId, ClientInfo),
+                      case app_srpc_handler:put(ClientId, ClientInfo2, key) of
                         ok ->
                           {ok, ConfirmResponse};
                         Error ->
@@ -307,9 +330,11 @@ user_confirm(ClientId, ConfirmRequest) ->
               SrpcRespData = create_srpc_resp_data(<<>>),
               {_, _ClientInfo, ConfirmResponse} =
                 srpc_lib:user_key_create_confirm_response(CryptClientInfo, invalid,
-                                                             ClientChallenge, SrpcRespData),
+                                                          ClientChallenge, SrpcRespData),
               {ok, ConfirmResponse}
-          end
+          end;
+        Error ->
+          Error
       end;
     Invalid ->
       Invalid

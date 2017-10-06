@@ -13,16 +13,12 @@
 %% API exports
 %%
 %%================================================================================================
--export([srpc_action/1]).
-
--export([lib_exchange/2
-        ,registration/2
+-export([parse_packet/1
+        ,lib_exchange/2
+        ,srpc_action/1
         ,encrypt/3
         ,decrypt/3
         ,client_info/1
-        ,server_epoch/2
-        ,refresh/2
-        ,close/2
         ]).
 
 %%================================================================================================
@@ -47,29 +43,59 @@
 -define(SRPC_REGISTRATION_NOT_FOUND,  12).
 -define(SRPC_REGISTRATION_ERROR,     255).
 
-srpc_action(<< IdLen:8, ClientId:IdLen/binary, SrpcAction:8, ActionData/binary >>) ->
-  ActionResp = srpc_action(SrpcAction, ClientId, ActionData),
-  {SrpcAction, ActionResp};
+%%================================================================================================
+%%
+%% SRPC Message Handling
+%%
+%%================================================================================================
+%%------------------------------------------------------------------------------------------------
+%%
+%%   Parse Packet
+%%
+%%------------------------------------------------------------------------------------------------
+parse_packet(<<16#00, Data/binary>>) ->
+  {lib_exchange, Data};
+parse_packet(<<16#10, IdLen:8, Id:IdLen/binary, Data/binary>>) ->
+  packet_client(srpc_action, Id, Data);
+parse_packet(<<16#ff, IdLen:8, Id:IdLen/binary, Data/binary>>) ->
+  packet_client(app_request, Id, Data);
+parse_packet(_) ->
+  {error, <<"Invalid SRPC packet">>}.
+
+packet_client(Type, Id, Data) ->
+  case client_info(Id) of
+    {ok, ClientInfo} ->
+      {Type, ClientInfo, Data};
+    Invalid ->
+      Invalid
+  end.
+
+%%------------------------------------------------------------------------------------------------
+%%
+%%   Route SRPC Actions
+%%
+%%------------------------------------------------------------------------------------------------
+srpc_action(<< 16#10, IdLen:8, ClientId:IdLen/binary, SrpcCode:8, ActionData/binary >>) ->
+  srpc_action(SrpcCode, ClientId, ActionData);
 srpc_action(_) ->
   {undefined, {error, <<"Invalid srpc action packet">>}}.
 
 srpc_action(16#01, ClientId, ActionData) ->
-  lib_confirm(ClientId, ActionData);
+  {lib_confirm, lib_confirm(ClientId, ActionData)};
 srpc_action(16#10, ClientId, ActionData) ->
-  registration(ClientId, ActionData);
+  {registration, registration(ClientId, ActionData)};
 srpc_action(16#20, ClientId, ActionData) ->
-  user_exchange(ClientId, ActionData);
+  {user_exchange, user_exchange(ClientId, ActionData)};
 srpc_action(16#21, ClientId, ActionData) ->
-  user_confirm(ClientId, ActionData);
+  {user_confirm, user_confirm(ClientId, ActionData)};
 srpc_action(16#30, ClientId, ActionData) ->
-  server_epoch(ClientId, ActionData);
+  {server_epoch, server_epoch(ClientId, ActionData)};
 srpc_action(16#40, ClientId, ActionData) ->
-  refresh(ClientId, ActionData);
+  {refresh, refresh(ClientId, ActionData)};
 srpc_action(16#ff, ClientId, ActionData) ->
-  close(ClientId, ActionData);
+  {close, close(ClientId, ActionData)};
 srpc_action(_, _ClientId, _ActionData) ->
   {error, <<"Invalid srpc action">>}.
-
 
 %%================================================================================================
 %%
@@ -81,10 +107,10 @@ srpc_action(_, _ClientId, _ActionData) ->
 %%   Lib Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-lib_exchange(ClientId, ExchangeRequest) ->
+lib_exchange(ClientId, <<16#00, ExchangeRequest/binary>>) ->
   case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of
     {ok, {ClientPublicKey, ReqExchangeData}} ->
-      RespExchangeData = 
+      RespExchangeData =
         case erlang:function_exported(app_srpc_handler, lib_exchange_data, 1) of
           true ->
             app_srpc_handler:lib_exchange_data(ReqExchangeData);
@@ -123,7 +149,7 @@ lib_confirm(ClientId, ConfirmRequest) ->
             error ->
               {Nonce, ConfirmReqData};
             _ ->
-              ConfirmRespData = 
+              ConfirmRespData =
                 case erlang:function_exported(app_srpc_handler, lib_confirm_data, 1) of
                   true ->
                     app_srpc_handler:lib_confirm_data(ConfirmReqData);
@@ -132,7 +158,7 @@ lib_confirm(ClientId, ConfirmRequest) ->
                 end,
               SrpcRespData = create_srpc_resp_data(ConfirmRespData),
               case srpc_lib:lib_key_create_confirm_response(ExchangeMap, ClientChallenge,
-                                                               SrpcRespData) of
+                                                            SrpcRespData) of
                 {ok, ClientInfo, ConfirmResponse} ->
                   case app_srpc_handler:put(ClientId, ClientInfo, key) of
                     ok ->
@@ -166,7 +192,7 @@ registration(ClientId, RegistrationRequest) ->
           UserId = maps:get(user_id, SrpcRegistrationData),
           case extract_req_data(SrpcReqData) of
             {ok, ReqRegistrationData} ->
-              RespRegistrationData = 
+              RespRegistrationData =
                 case erlang:function_exported(app_srpc_handler, registration_data, 2) of
                   true ->
                     app_srpc_handler:registration_data(UserId, ReqRegistrationData);
@@ -244,7 +270,7 @@ user_exchange(ClientId, ExchangeRequest) ->
         {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
           case extract_req_data(SrpcReqData) of
             {ok, ReqExchangeData} ->
-              RespExchangeData = 
+              RespExchangeData =
                 case erlang:function_exported(app_srpc_handler, user_exchange_data, 2) of
                   true ->
                     app_srpc_handler:user_exchange_data(UserId, ReqExchangeData);
@@ -257,7 +283,7 @@ user_exchange(ClientId, ExchangeRequest) ->
                   case srpc_lib:user_key_create_exchange_response(ClientId,
                                                                   ClientInfo,
                                                                   SrpcRegistrationData,
-                                                                  ClientPublicKey, 
+                                                                  ClientPublicKey,
                                                                   SrpcRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->
                       ExchangeClientId = maps:get(client_id, ExchangeMap),
@@ -271,7 +297,7 @@ user_exchange(ClientId, ExchangeRequest) ->
                       Error
                   end;
                 undefined ->
-                  srpc_lib:user_key_create_exchange_response(ClientInfo, invalid, 
+                  srpc_lib:user_key_create_exchange_response(ClientInfo, invalid,
                                                              ClientPublicKey, SrpcRespData)
               end;
             InvalidError ->
@@ -300,7 +326,7 @@ user_confirm(ClientId, ConfirmRequest) ->
               case extract_req_data(SrpcReqConfirmData) of
                 {ok, ReqConfirmData} ->
                   UserId = maps:get(entity_id, ExchangeMap),
-                  RespConfirmData = 
+                  RespConfirmData =
                     case erlang:function_exported(app_srpc_handler, user_confirm_data, 2) of
                       true ->
                         app_srpc_handler:user_confirm_data(UserId, ReqConfirmData);
@@ -360,7 +386,7 @@ server_epoch(ClientId, ServerEpochRequest) ->
       end;
     Invalid ->
       Invalid
-  end.    
+  end.
 
 %%================================================================================================
 %%
@@ -394,6 +420,8 @@ refresh(ClientId, RefreshRequest) ->
 close(ClientId, CloseRequest) ->
   case client_info(ClientId) of
     {ok, ClientInfo} ->
+      %% io:format("~p debug close info~n", [?MODULE]),
+      %% srpc_util:debug_info(ClientInfo),
       case decrypt(origin_client, ClientInfo, CloseRequest) of
         {ok, ClientId} ->
           app_srpc_handler:delete(ClientId, key),
@@ -471,7 +499,7 @@ extract_nonce_req_data(<<NonceLen:?NONCE_BITS, MoreData/binary>>) ->
         _ ->
           {error, <<"Invalid nonce len longer than available data">>}
       end
-  end.        
+  end.
 
 extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqEpoch:?EPOCH_BITS, MoreData/binary>>) ->
   {Nonce, ReqData} = extract_nonce_req_data(MoreData),
@@ -526,7 +554,7 @@ extract_req_data(_SrpcReqData) ->
 %%------------------------------------------------------------------------------------------------
 create_srpc_resp_data(RespData) ->
   Epoch = epoch_seconds(),
-  Nonce = 
+  Nonce =
     case erlang:get(nonce) of
       undefined ->
         <<>>;

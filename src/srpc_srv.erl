@@ -13,12 +13,11 @@
 %% API exports
 %%
 %%================================================================================================
--export([parse_packet/1
-        ,lib_exchange/2
-        ,srpc_action/1
-        ,decrypt/3
+-export([parse_packet/2
+        ,lib_exchange/3
+        ,srpc_action/2
+        ,decrypt/4
         ,encrypt/4
-        ,client_info/1
         ]).
 
 %%================================================================================================
@@ -53,17 +52,17 @@
 %%   Parse Packet
 %%
 %%------------------------------------------------------------------------------------------------
-parse_packet(<<16#00, Data/binary>>) ->
+parse_packet(<<16#00, Data/binary>>, _SrpcHandler) ->
   {lib_exchange, Data};
-parse_packet(<<16#10, IdLen:8, Id:IdLen/binary, Data/binary>>) ->
-  packet_client(srpc_action, Id, Data);
-parse_packet(<<16#ff, IdLen:8, Id:IdLen/binary, Data/binary>>) ->
-  packet_client(app_request, Id, Data);
-parse_packet(_) ->
+parse_packet(<<16#10, IdLen:8, Id:IdLen/binary, Data/binary>>, SrpcHandler) ->
+  packet_client({srpc_action, Id, Data}, SrpcHandler);
+parse_packet(<<16#ff, IdLen:8, Id:IdLen/binary, Data/binary>>, SrpcHandler) ->
+  packet_client({app_request, Id, Data}, SrpcHandler);
+parse_packet(_, _SrpcHandler) ->
   {error, <<"Invalid SRPC packet">>}.
 
-packet_client(Type, Id, Data) ->
-  case client_info(Id) of
+packet_client({Type, Id, Data}, SrpcHandler) ->
+  case client_info(Id, SrpcHandler) of
     {ok, ClientInfo} ->
       {Type, ClientInfo, Data};
     Invalid ->
@@ -75,26 +74,27 @@ packet_client(Type, Id, Data) ->
 %%   Route SRPC Actions
 %%
 %%------------------------------------------------------------------------------------------------
-srpc_action(<< 16#10, IdLen:8, ClientId:IdLen/binary, SrpcCode:8, ActionData/binary >>) ->
-  srpc_action(SrpcCode, ClientId, ActionData);
-srpc_action(_) ->
+srpc_action(<< 16#10, IdLen:8, ClientId:IdLen/binary, SrpcCode:8, ActionData/binary >>,
+            SrpcHandler) ->
+  srpc_action(SrpcCode, ClientId, ActionData, SrpcHandler);
+srpc_action(_, _) ->
   {undefined, {error, <<"Invalid srpc action packet">>}}.
 
-srpc_action(16#01, ClientId, ActionData) ->
-  {lib_confirm, lib_confirm(ClientId, ActionData)};
-srpc_action(16#10, ClientId, ActionData) ->
-  {registration, registration(ClientId, ActionData)};
-srpc_action(16#20, ClientId, ActionData) ->
-  {user_exchange, user_exchange(ClientId, ActionData)};
-srpc_action(16#21, ClientId, ActionData) ->
-  {user_confirm, user_confirm(ClientId, ActionData)};
-srpc_action(16#30, ClientId, ActionData) ->
-  {server_time, server_time(ClientId, ActionData)};
-srpc_action(16#40, ClientId, ActionData) ->
-  {refresh, refresh(ClientId, ActionData)};
-srpc_action(16#ff, ClientId, ActionData) ->
-  {close, close(ClientId, ActionData)};
-srpc_action(_, _ClientId, _ActionData) ->
+srpc_action(16#01, ClientId, ActionData, SrpcHandler) ->
+  {lib_confirm, lib_confirm(ClientId, ActionData, SrpcHandler)};
+srpc_action(16#10, ClientId, ActionData, SrpcHandler) ->
+  {registration, registration(ClientId, ActionData, SrpcHandler)};
+srpc_action(16#20, ClientId, ActionData, SrpcHandler) ->
+  {user_exchange, user_exchange(ClientId, ActionData, SrpcHandler)};
+srpc_action(16#21, ClientId, ActionData, SrpcHandler) ->
+  {user_confirm, user_confirm(ClientId, ActionData, SrpcHandler)};
+srpc_action(16#30, ClientId, ActionData, SrpcHandler) ->
+  {server_time, server_time(ClientId, ActionData, SrpcHandler)};
+srpc_action(16#40, ClientId, ActionData, SrpcHandler) ->
+  {refresh, refresh(ClientId, ActionData, SrpcHandler)};
+srpc_action(16#ff, ClientId, ActionData, SrpcHandler) ->
+  {close, close(ClientId, ActionData, SrpcHandler)};
+srpc_action(_, _ClientId, _ActionData, _SrpcHandler) ->
   {error, <<"Invalid srpc action">>}.
 
 %%================================================================================================
@@ -107,11 +107,11 @@ srpc_action(_, _ClientId, _ActionData) ->
 %%   Lib Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-lib_exchange(ClientId, <<16#00, ExchangeRequest/binary>>) ->
+lib_exchange(ClientId, <<16#00, ExchangeRequest/binary>>, SrpcHandler) ->
   case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of
     {ok, {ClientPublicKey, ReqExchangeData}} ->
       RespExchangeData =
-        case erlang:function_exported(app_srpc_handler, lib_exchange_data, 1) of
+        case erlang:function_exported(SrpcHandler, lib_exchange_data, 1) of
           true ->
             app_srpc_handler:lib_exchange_data(ReqExchangeData);
           false ->
@@ -120,7 +120,7 @@ lib_exchange(ClientId, <<16#00, ExchangeRequest/binary>>) ->
       case srpc_lib:lib_key_create_exchange_response(ClientId, ClientPublicKey, RespExchangeData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
           ClientId = maps:get(client_id, ExchangeMap),
-          case app_srpc_handler:put(ClientId, ExchangeMap, exchange) of
+          case SrpcHandler:put(ClientId, ExchangeMap, exchange) of
             ok ->
               {ok, ExchangeResponse};
             Error ->
@@ -138,18 +138,18 @@ lib_exchange(ClientId, <<16#00, ExchangeRequest/binary>>) ->
 %%   Lib Key Agreement Confirm
 %%
 %%------------------------------------------------------------------------------------------------
-lib_confirm(ClientId, ConfirmRequest) ->
-  case app_srpc_handler:get(ClientId, exchange) of
+lib_confirm(ClientId, ConfirmRequest, SrpcHandler) ->
+  case SrpcHandler:get(ClientId, exchange) of
     {ok, ExchangeMap} ->
-      app_srpc_handler:delete(ClientId, exchange),
+      SrpcHandler:delete(ClientId, exchange),
       case srpc_lib:lib_key_process_confirm_request(ExchangeMap, ConfirmRequest) of
         {ok, {ClientChallenge, SrpcReqData}} ->
           case extract_time_data(SrpcReqData) of
             {ok, {_ClientTime, Nonce, ConfirmReqData}} ->
               ConfirmRespData =
-                case erlang:function_exported(app_srpc_handler, lib_confirm_data, 1) of
+                case erlang:function_exported(SrpcHandler, lib_confirm_data, 1) of
                   true ->
-                    app_srpc_handler:lib_confirm_data(ConfirmReqData);
+                    SrpcHandler:lib_confirm_data(ConfirmReqData);
                   false ->
                     <<>>
                 end,
@@ -159,7 +159,7 @@ lib_confirm(ClientId, ConfirmRequest) ->
               case srpc_lib:lib_key_create_confirm_response(ExchangeMap, ClientChallenge,
                                                             SrpcRespData) of
                 {ok, ClientInfo, ConfirmResponse} ->
-                  case app_srpc_handler:put(ClientId, ClientInfo, key) of
+                  case SrpcHandler:put(ClientId, ClientInfo, key) of
                     ok ->
                       {ok, ConfirmResponse};
                     Error ->
@@ -185,18 +185,18 @@ lib_confirm(ClientId, ConfirmRequest) ->
 %% Registration
 %%
 %%================================================================================================
-registration(ClientId, RegistrationRequest) ->
-  case client_info(ClientId) of
+registration(ClientId, RegistrationRequest, SrpcHandler) ->
+  case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
       case srpc_lib:process_registration_request(ClientInfo, RegistrationRequest) of
         {ok, {RegistrationCode, SrpcRegistrationData, SrpcReqData}} ->
           UserId = maps:get(user_id, SrpcRegistrationData),
-          case extract_req_data(SrpcReqData) of
+          case extract_req_data(SrpcReqData, SrpcHandler) of
             {ok, {Nonce, ReqRegistrationData}} ->
               RespRegistrationData =
-                case erlang:function_exported(app_srpc_handler, registration_data, 2) of
+                case erlang:function_exported(SrpcHandler, registration_data, 2) of
                   true ->
-                    app_srpc_handler:registration_data(UserId, ReqRegistrationData);
+                    SrpcHandler:registration_data(UserId, ReqRegistrationData);
                   false ->
                     <<>>
                 end,
@@ -204,9 +204,9 @@ registration(ClientId, RegistrationRequest) ->
 
               case RegistrationCode of
                 ?SRPC_REGISTRATION_CREATE ->
-                  case app_srpc_handler:get(UserId, registration) of
+                  case SrpcHandler:get(UserId, registration) of
                     undefined ->
-                      case app_srpc_handler:put(UserId, SrpcRegistrationData, registration) of
+                      case SrpcHandler:put(UserId, SrpcRegistrationData, registration) of
                         ok ->
                           srpc_lib:create_registration_response(ClientInfo,
                                                                 ?SRPC_REGISTRATION_OK,
@@ -222,9 +222,9 @@ registration(ClientId, RegistrationRequest) ->
                                                             SrpcRespData)
                   end;
                 ?SRPC_REGISTRATION_UPDATE ->
-                  case app_srpc_handler:get(UserId, registration) of
+                  case SrpcHandler:get(UserId, registration) of
                     {ok, _PrevSrpcRegistrationData} ->
-                      case app_srpc_handler:put(UserId, SrpcRegistrationData, registration) of
+                      case SrpcHandler:put(UserId, SrpcRegistrationData, registration) of
                         ok ->
                           srpc_lib:create_registration_response(ClientInfo,
                                                                 ?SRPC_REGISTRATION_OK,
@@ -264,22 +264,22 @@ registration(ClientId, RegistrationRequest) ->
 %%   User Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-user_exchange(ClientId, ExchangeRequest) ->
-  case client_info(ClientId) of
+user_exchange(ClientId, ExchangeRequest, SrpcHandler) ->
+  case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
       case srpc_lib:user_key_process_exchange_request(ClientInfo, ExchangeRequest) of
         {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
-          case extract_req_data(SrpcReqData) of
+          case extract_req_data(SrpcReqData, SrpcHandler) of
             {ok, {Nonce, ReqExchangeData}} ->
               RespExchangeData =
-                case erlang:function_exported(app_srpc_handler, user_exchange_data, 2) of
+                case erlang:function_exported(SrpcHandler, user_exchange_data, 2) of
                   true ->
-                    app_srpc_handler:user_exchange_data(UserId, ReqExchangeData);
+                    SrpcHandler:user_exchange_data(UserId, ReqExchangeData);
                   false ->
                     <<>>
                 end,
               SrpcRespData = create_srpc_resp_data(Nonce, RespExchangeData),
-              case app_srpc_handler:get(UserId, registration) of
+              case SrpcHandler:get(UserId, registration) of
                 {ok, SrpcRegistrationData} ->
                   case srpc_lib:user_key_create_exchange_response(ClientId,
                                                                   ClientInfo,
@@ -288,7 +288,7 @@ user_exchange(ClientId, ExchangeRequest) ->
                                                                   SrpcRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->
                       ExchangeClientId = maps:get(client_id, ExchangeMap),
-                      case app_srpc_handler:put(ExchangeClientId, ExchangeMap, exchange) of
+                      case SrpcHandler:put(ExchangeClientId, ExchangeMap, exchange) of
                         ok ->
                           {ok, ExchangeResponse};
                         Error ->
@@ -316,21 +316,21 @@ user_exchange(ClientId, ExchangeRequest) ->
 %%   User Key Confirm
 %%
 %%------------------------------------------------------------------------------------------------
-user_confirm(ClientId, ConfirmRequest) ->
-  case client_info(ClientId) of
+user_confirm(ClientId, ConfirmRequest, SrpcHandler) ->
+  case client_info(ClientId, SrpcHandler) of
     {ok, CryptClientInfo} ->
       case srpc_lib:user_key_process_confirm_request(CryptClientInfo, ConfirmRequest) of
         {ok, {ClientChallenge, SrpcReqConfirmData}} ->
-          case app_srpc_handler:get(ClientId, exchange) of
+          case SrpcHandler:get(ClientId, exchange) of
             {ok, ExchangeMap} ->
-              app_srpc_handler:delete(ClientId, exchange),
-              case extract_req_data(SrpcReqConfirmData) of
+              SrpcHandler:delete(ClientId, exchange),
+              case extract_req_data(SrpcReqConfirmData, SrpcHandler) of
                 {ok, {Nonce, ReqConfirmData}} ->
                   UserId = maps:get(entity_id, ExchangeMap),
                   RespConfirmData =
-                    case erlang:function_exported(app_srpc_handler, user_confirm_data, 2) of
+                    case erlang:function_exported(SrpcHandler, user_confirm_data, 2) of
                       true ->
-                        app_srpc_handler:user_confirm_data(UserId, ReqConfirmData);
+                        SrpcHandler:user_confirm_data(UserId, ReqConfirmData);
                       false ->
                         <<>>
                     end,
@@ -340,7 +340,7 @@ user_confirm(ClientId, ConfirmRequest) ->
                                                                  SrpcRespData) of
                     {ok, ClientInfo, ConfirmResponse} ->
                       ClientInfo2 = maps:put(client_id, ClientId, ClientInfo),
-                      case app_srpc_handler:put(ClientId, ClientInfo2, key) of
+                      case SrpcHandler:put(ClientId, ClientInfo2, key) of
                         ok ->
                           {ok, ConfirmResponse};
                         Error ->
@@ -373,8 +373,8 @@ user_confirm(ClientId, ConfirmRequest) ->
 %% Server Time
 %%
 %%================================================================================================
-server_time(ClientId, ServerTimeRequest) ->
-  case client_info(ClientId) of
+server_time(ClientId, ServerTimeRequest, SrpcHandler) ->
+  case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
       %% To bypass req age check (which needs an accurate server time), don't use srpc_srv:decrypt
       case srpc_lib:decrypt(origin_client, ClientInfo, ServerTimeRequest) of
@@ -399,13 +399,13 @@ server_time(ClientId, ServerTimeRequest) ->
 %% Refresh Srpc Keys
 %%
 %%================================================================================================
-refresh(ClientId, RefreshRequest) ->
-  case client_info(ClientId) of
+refresh(ClientId, RefreshRequest, SrpcHandler) ->
+  case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
-      case decrypt(origin_client, ClientInfo, RefreshRequest) of
+      case decrypt(origin_client, ClientInfo, RefreshRequest, SrpcHandler) of
         {ok, {Nonce, Data}} ->
           NewClientInfo = srpc_lib:refresh_keys(ClientInfo, Data),
-          case app_srpc_handler:put(ClientId, NewClientInfo, key) of
+          case SrpcHandler:put(ClientId, NewClientInfo, key) of
             ok ->
               encrypt(origin_server, NewClientInfo, Nonce, Data);
             Error ->
@@ -423,12 +423,12 @@ refresh(ClientId, RefreshRequest) ->
 %% Client Close
 %%
 %%================================================================================================
-close(ClientId, CloseRequest) ->
-  case client_info(ClientId) of
+close(ClientId, CloseRequest, SrpcHandler) ->
+  case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
-      case decrypt(origin_client, ClientInfo, CloseRequest) of
+      case decrypt(origin_client, ClientInfo, CloseRequest, SrpcHandler) of
         {ok, {Nonce, Data}} ->
-          app_srpc_handler:delete(ClientId, key),
+          SrpcHandler:delete(ClientId, key),
           encrypt(origin_server, ClientInfo, Nonce, Data);
         Error ->
           Error
@@ -447,10 +447,10 @@ close(ClientId, CloseRequest) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-client_info(ClientId) when is_binary(ClientId) ->
-  case app_srpc_handler:get(ClientId, exchange) of
+client_info(ClientId, SrpcHandler) when is_binary(ClientId) ->
+  case SrpcHandler:get(ClientId, exchange) of
     undefined ->
-      case app_srpc_handler:get(ClientId, key) of
+      case SrpcHandler:get(ClientId, key) of
         undefined ->
           {invalid, <<"Invalid ClientId: ", ClientId/binary>>};
         Result ->
@@ -459,7 +459,7 @@ client_info(ClientId) when is_binary(ClientId) ->
     Result ->
       Result
   end;
-client_info(_) ->
+client_info(_, _SrpcHandler) ->
   {invalid, <<"Invalid ClientId: Missing">>}.
 
 %%================================================================================================
@@ -467,10 +467,10 @@ client_info(_) ->
 %% Decrypt / Encrypt
 %%
 %%================================================================================================
-decrypt(Origin, ClientInfo, Data) ->
+decrypt(Origin, ClientInfo, Data, SrpcHandler) ->
   case srpc_lib:decrypt(Origin, ClientInfo, Data) of
     {ok, SrpcData} ->
-      extract_req_data(SrpcData);
+      extract_req_data(SrpcData, SrpcHandler);
     InvalidError ->
       InvalidError
   end.
@@ -504,13 +504,13 @@ extract_time_data(_) ->
 %%------------------------------------------------------------------------------------------------
 extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS, 
                    NonceLen:?NONCE_BITS, Nonce:NonceLen/binary,
-                   ReqData/binary>>) ->
+                   ReqData/binary>>, SrpcHandler) ->
   OKResponse = {ok, {Nonce, ReqData}},
-  case erlang:function_exported(app_srpc_handler, req_age_tolerance, 0) of
+  case erlang:function_exported(SrpcHandler, req_age_tolerance, 0) of
     false ->
       OKResponse;
     true ->
-      case app_srpc_handler:req_age_tolerance() of
+      case SrpcHandler:req_age_tolerance() of
         Tolerance when 0 < Tolerance ->
           SysTime = time_second(),
           ReqAge = abs(SysTime - ReqTime),
@@ -520,9 +520,9 @@ extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS,
                 0 ->
                   OKResponse;
                 _ ->
-                  case erlang:function_exported(app_srpc_handler, nonce, 1) of
+                  case erlang:function_exported(SrpcHandler, nonce, 1) of
                     true ->
-                      case app_srpc_handler:nonce(Nonce) of
+                      case SrpcHandler:nonce(Nonce) of
                         true ->
                           OKResponse;
                         false ->
@@ -540,9 +540,9 @@ extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS,
           OKResponse
       end
   end;
-extract_req_data(<<_:?HDR_BITS, _Rest/binary>>) ->
+extract_req_data(<<_:?HDR_BITS, _Rest/binary>>, _SrpcHandler) ->
   {error, <<"Invalid SRPC header version number">>};
-extract_req_data(_ReqData) ->
+extract_req_data(_ReqData, _SrpcHandler) ->
   {error, <<"Invalid SRPC request data">>}.
 
 %%------------------------------------------------------------------------------------------------

@@ -153,7 +153,7 @@ lib_confirm(ClientId, ConfirmRequest, SrpcHandler) ->
                   false ->
                     <<>>
                 end,
-              Time = time_second(),
+              Time = system_time(),
               TimeRespData = <<Time:?TIME_BITS, ConfirmRespData/binary>>,
               SrpcRespData = create_srpc_resp_data(Nonce, TimeRespData),
               case srpc_lib:lib_key_create_confirm_response(ExchangeMap, ClientChallenge,
@@ -381,7 +381,7 @@ server_time(ClientId, ServerTimeRequest, SrpcHandler) ->
         {ok, ReqData} ->
           case extract_time_data(ReqData) of
             {ok, {_ClientTime, Nonce, Data}} ->
-              Time = time_second(),
+              Time = system_time(),
               TimeRespData = <<Time:?TIME_BITS, Data/binary>>,
               encrypt(origin_server, ClientInfo, Nonce, TimeRespData);
             Error ->
@@ -512,7 +512,7 @@ extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS,
     true ->
       case SrpcHandler:req_age_tolerance() of
         Tolerance when 0 < Tolerance ->
-          SysTime = time_second(),
+          SysTime = system_time(),
           ReqAge = abs(SysTime - ReqTime),
           case ReqAge =< Tolerance of
             true ->
@@ -552,7 +552,7 @@ extract_req_data(_ReqData, _SrpcHandler) ->
 %%------------------------------------------------------------------------------------------------
 create_srpc_resp_data(Nonce, RespData) ->
   NonceLen = erlang:byte_size(Nonce),
-  Time = time_second(),
+  Time = system_time(),
   <<?HDR_VSN:?HDR_BITS, Time:?TIME_BITS, NonceLen:?NONCE_BITS, Nonce/binary, RespData/binary>>.
 
 %%------------------------------------------------------------------------------------------------
@@ -560,5 +560,5 @@ create_srpc_resp_data(Nonce, RespData) ->
 %%
 %%
 %%------------------------------------------------------------------------------------------------
-time_second() ->
+system_time() ->
   erlang:system_time(second).

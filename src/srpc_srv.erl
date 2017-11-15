@@ -298,7 +298,7 @@ user_exchange(ClientId, ExchangeRequest, SrpcHandler) ->
                       Error
                   end;
                 undefined ->
-                  srpc_lib:user_key_create_exchange_response(ClientInfo, invalid,
+                  srpc_lib:user_key_create_exchange_response(ClientId, ClientInfo, invalid,
                                                              ClientPublicKey, SrpcRespData)
               end;
             InvalidError ->
@@ -354,7 +354,7 @@ user_confirm(ClientId, ConfirmRequest, SrpcHandler) ->
                   InvalidError
               end;
             undefined ->
-              Nonce = crypto:strong_rand_bytes(?NONCE_BITS/8),
+              Nonce = crypto:strong_rand_bytes(erlang:trunc(?NONCE_BITS/8)),
               SrpcRespData = create_srpc_resp_data(Nonce, <<>>),
               {_, _ClientInfo, ConfirmResponse} =
                 srpc_lib:user_key_create_confirm_response(CryptClientInfo, invalid,

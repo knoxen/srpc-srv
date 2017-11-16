@@ -8,7 +8,7 @@
 %%
 %%================================================================================================
 -export([parse_packet/2
-        ,lib_exchange/3
+        ,lib_exchange/2
         ,srpc_action/2
         ,decrypt/4
         ,encrypt/4
@@ -99,7 +99,7 @@ srpc_route(_, __ActionTerm)   -> {error, <<"Invalid srpc action">>}.
 %%   Lib Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-lib_exchange(ClientId, <<16#00, ExchangeRequest/binary>>, SrpcHandler) ->
+lib_exchange(<<16#00, ExchangeRequest/binary>>, SrpcHandler) ->
   case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of
     {ok, {ClientPublicKey, ReqExchangeData}} ->
       RespExchangeData =
@@ -109,6 +109,7 @@ lib_exchange(ClientId, <<16#00, ExchangeRequest/binary>>, SrpcHandler) ->
           false ->
             <<>>
         end,
+      ClientId = SrpcHandler:client_id(),
       case srpc_lib:lib_key_create_exchange_response(ClientId, ClientPublicKey, RespExchangeData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
           ClientId = maps:get(client_id, ExchangeMap),
@@ -151,6 +152,10 @@ lib_confirm({ClientId, ConfirmRequest, SrpcHandler}) ->
               case srpc_lib:lib_key_create_confirm_response(ExchangeMap, ClientChallenge,
                                                             SrpcRespData) of
                 {ok, ClientInfo, ConfirmResponse} ->
+
+                  srpc_util:debug_info(?MODULE, lib_confirm, ClientInfo),
+
+
                   case SrpcHandler:put(ClientId, ClientInfo, key) of
                     ok ->
                       {ok, ConfirmResponse};
@@ -174,80 +179,6 @@ lib_confirm({ClientId, ConfirmRequest, SrpcHandler}) ->
 
 %%================================================================================================
 %%
-%% Registration
-%%
-%%================================================================================================
-registration({ClientId, RegistrationRequest, SrpcHandler}) ->
-  case client_info(ClientId, SrpcHandler) of
-    {ok, ClientInfo} ->
-      case srpc_lib:process_registration_request(ClientInfo, RegistrationRequest) of
-        {ok, {RegistrationCode, SrpcRegistrationData, SrpcReqData}} ->
-          UserId = maps:get(user_id, SrpcRegistrationData),
-          case extract_req_data(SrpcReqData, SrpcHandler) of
-            {ok, {Nonce, ReqRegistrationData}} ->
-              RespRegistrationData =
-                case erlang:function_exported(SrpcHandler, registration_data, 2) of
-                  true ->
-                    SrpcHandler:registration_data(UserId, ReqRegistrationData);
-                  false ->
-                    <<>>
-                end,
-              SrpcRespData = create_srpc_resp_data(Nonce, RespRegistrationData),
-
-              case RegistrationCode of
-                ?SRPC_REGISTRATION_CREATE ->
-                  case SrpcHandler:get(UserId, registration) of
-                    undefined ->
-                      case SrpcHandler:put(UserId, SrpcRegistrationData, registration) of
-                        ok ->
-                          srpc_lib:create_registration_response(ClientInfo,
-                                                                ?SRPC_REGISTRATION_OK,
-                                                                SrpcRespData);
-                        _Error ->
-                          srpc_lib:create_registration_response(ClientInfo,
-                                                                ?SRPC_REGISTRATION_ERROR,
-                                                                SrpcRespData)
-                      end;
-                    {ok, _SrpcRegistrationData} ->
-                      srpc_lib:create_registration_response(ClientInfo,
-                                                            ?SRPC_REGISTRATION_DUP,
-                                                            SrpcRespData)
-                  end;
-                ?SRPC_REGISTRATION_UPDATE ->
-                  case SrpcHandler:get(UserId, registration) of
-                    {ok, _PrevSrpcRegistrationData} ->
-                      case SrpcHandler:put(UserId, SrpcRegistrationData, registration) of
-                        ok ->
-                          srpc_lib:create_registration_response(ClientInfo,
-                                                                ?SRPC_REGISTRATION_OK,
-                                                                SrpcRespData);
-                        _Error ->
-                          srpc_lib:create_registration_response(ClientInfo,
-                                                                ?SRPC_REGISTRATION_ERROR,
-                                                                SrpcRespData)
-                      end;
-                    undefined ->
-                      srpc_lib:create_registration_response(ClientInfo,
-                                                            ?SRPC_REGISTRATION_NOT_FOUND,
-                                                            SrpcRespData)
-                  end;
-                _ ->
-                  srpc_lib:create_registration_response(ClientInfo,
-                                                        ?SRPC_REGISTRATION_ERROR,
-                                                        SrpcRespData)
-              end;
-            Invalid ->
-              Invalid
-          end;
-        Error ->
-          Error
-      end;
-    {invalid, Reason} ->
-      {error, Reason}
-  end.
-
-%%================================================================================================
-%%
 %% User Client Key Agreement
 %%
 %%================================================================================================
@@ -259,6 +190,9 @@ registration({ClientId, RegistrationRequest, SrpcHandler}) ->
 user_exchange({ClientId, ExchangeRequest, SrpcHandler}) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
+
+      srpc_util:debug_info(?MODULE, user_exchange, ClientInfo),
+
       case srpc_lib:user_key_process_exchange_request(ClientInfo, ExchangeRequest) of
         {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
           case extract_req_data(SrpcReqData, SrpcHandler) of
@@ -273,12 +207,18 @@ user_exchange({ClientId, ExchangeRequest, SrpcHandler}) ->
               SrpcRespData = create_srpc_resp_data(Nonce, RespExchangeData),
               case SrpcHandler:get(UserId, registration) of
                 {ok, SrpcRegistrationData} ->
+
+
+                  
                   case srpc_lib:user_key_create_exchange_response(ClientId,
                                                                   ClientInfo,
                                                                   SrpcRegistrationData,
                                                                   ClientPublicKey,
                                                                   SrpcRespData) of
                     {ok, {ExchangeMap, ExchangeResponse}} ->
+
+      srpc_util:debug_info(?MODULE, user_exchange, ExchangeMap),
+
                       ExchangeClientId = maps:get(client_id, ExchangeMap),
                       case SrpcHandler:put(ExchangeClientId, ExchangeMap, exchange) of
                         ok ->
@@ -358,6 +298,80 @@ user_confirm({ClientId, ConfirmRequest, SrpcHandler}) ->
       end;
     Invalid ->
       Invalid
+  end.
+
+%%================================================================================================
+%%
+%% Registration
+%%
+%%================================================================================================
+registration({ClientId, RegistrationRequest, SrpcHandler}) ->
+  case client_info(ClientId, SrpcHandler) of
+    {ok, ClientInfo} ->
+      case srpc_lib:process_registration_request(ClientInfo, RegistrationRequest) of
+        {ok, {RegistrationCode, SrpcRegistrationData, SrpcReqData}} ->
+          UserId = maps:get(user_id, SrpcRegistrationData),
+          case extract_req_data(SrpcReqData, SrpcHandler) of
+            {ok, {Nonce, ReqRegistrationData}} ->
+              RespRegistrationData =
+                case erlang:function_exported(SrpcHandler, registration_data, 2) of
+                  true ->
+                    SrpcHandler:registration_data(UserId, ReqRegistrationData);
+                  false ->
+                    <<>>
+                end,
+              SrpcRespData = create_srpc_resp_data(Nonce, RespRegistrationData),
+
+              case RegistrationCode of
+                ?SRPC_REGISTRATION_CREATE ->
+                  case SrpcHandler:get(UserId, registration) of
+                    undefined ->
+                      case SrpcHandler:put(UserId, SrpcRegistrationData, registration) of
+                        ok ->
+                          srpc_lib:create_registration_response(ClientInfo,
+                                                                ?SRPC_REGISTRATION_OK,
+                                                                SrpcRespData);
+                        _Error ->
+                          srpc_lib:create_registration_response(ClientInfo,
+                                                                ?SRPC_REGISTRATION_ERROR,
+                                                                SrpcRespData)
+                      end;
+                    {ok, _SrpcRegistrationData} ->
+                      srpc_lib:create_registration_response(ClientInfo,
+                                                            ?SRPC_REGISTRATION_DUP,
+                                                            SrpcRespData)
+                  end;
+                ?SRPC_REGISTRATION_UPDATE ->
+                  case SrpcHandler:get(UserId, registration) of
+                    {ok, _PrevSrpcRegistrationData} ->
+                      case SrpcHandler:put(UserId, SrpcRegistrationData, registration) of
+                        ok ->
+                          srpc_lib:create_registration_response(ClientInfo,
+                                                                ?SRPC_REGISTRATION_OK,
+                                                                SrpcRespData);
+                        _Error ->
+                          srpc_lib:create_registration_response(ClientInfo,
+                                                                ?SRPC_REGISTRATION_ERROR,
+                                                                SrpcRespData)
+                      end;
+                    undefined ->
+                      srpc_lib:create_registration_response(ClientInfo,
+                                                            ?SRPC_REGISTRATION_NOT_FOUND,
+                                                            SrpcRespData)
+                  end;
+                _ ->
+                  srpc_lib:create_registration_response(ClientInfo,
+                                                        ?SRPC_REGISTRATION_ERROR,
+                                                        SrpcRespData)
+              end;
+            Invalid ->
+              Invalid
+          end;
+        Error ->
+          Error
+      end;
+    {invalid, Reason} ->
+      {error, Reason}
   end.
 
 %%================================================================================================

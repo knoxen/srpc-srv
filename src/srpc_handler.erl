@@ -9,6 +9,19 @@
 %%
 %%================================================================================================
 %%------------------------------------------------------------------------------------------------
+%% @doc Generate Client ID
+%%
+%% Generate a probabilistically uniquie Client ID. For easy control over the characteristics of
+%% the Client ID consider using EntropyString for either 
+%% <a href=https://github.com/EntropyString/Erlang>Erlang</a> or
+%% <a href=https://github.com/EntropyString/Elixir>Elixir</a>.
+%%
+%% Returns binary <code>ClientId</code>
+%%------------------------------------------------------------------------------------------------
+-callback client_id() -> 
+  ClientID :: binary().
+
+%%------------------------------------------------------------------------------------------------
 %% @doc Put <code>Value</code> for <code>Key</code> under storage <code>Type</code>
 %%
 %% Returns <code>ok</code> or <code>{error, Reason}</code>

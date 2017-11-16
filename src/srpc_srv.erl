@@ -2,12 +2,6 @@
 
 -author("paul@knoxen.com").
 
-%%
-%% CxNote Current implementation uses an explicit app_srpc_handler module that must be provided
-%% by the hosting application. Need to allow this module to be passed in some manner to avoid
-%% the explicit, hard-coded module name.
-%%
-
 %%================================================================================================
 %%
 %% API exports
@@ -74,28 +68,26 @@ packet_client({Type, Id, Data}, SrpcHandler) ->
 %%   Route SRPC Actions
 %%
 %%------------------------------------------------------------------------------------------------
-srpc_action(<< 16#10, IdLen:8, ClientId:IdLen/binary, SrpcCode:8, ActionData/binary >>,
-            SrpcHandler) ->
-  srpc_action(SrpcCode, ClientId, ActionData, SrpcHandler);
-srpc_action(_, _) ->
-  {undefined, {error, <<"Invalid srpc action packet">>}}.
+srpc_action(<<16#10, L:8, ClientId:L/binary, SrpcCode:8, ActionData/binary>>, SrpcHandler) ->
+  srpc_route(SrpcCode, {ClientId, ActionData, SrpcHandler});
 
-srpc_action(16#01, ClientId, ActionData, SrpcHandler) ->
-  {lib_confirm, lib_confirm(ClientId, ActionData, SrpcHandler)};
-srpc_action(16#10, ClientId, ActionData, SrpcHandler) ->
-  {registration, registration(ClientId, ActionData, SrpcHandler)};
-srpc_action(16#20, ClientId, ActionData, SrpcHandler) ->
-  {user_exchange, user_exchange(ClientId, ActionData, SrpcHandler)};
-srpc_action(16#21, ClientId, ActionData, SrpcHandler) ->
-  {user_confirm, user_confirm(ClientId, ActionData, SrpcHandler)};
-srpc_action(16#30, ClientId, ActionData, SrpcHandler) ->
-  {server_time, server_time(ClientId, ActionData, SrpcHandler)};
-srpc_action(16#40, ClientId, ActionData, SrpcHandler) ->
-  {refresh, refresh(ClientId, ActionData, SrpcHandler)};
-srpc_action(16#ff, ClientId, ActionData, SrpcHandler) ->
-  {close, close(ClientId, ActionData, SrpcHandler)};
-srpc_action(_, _ClientId, _ActionData, _SrpcHandler) ->
-  {error, <<"Invalid srpc action">>}.
+srpc_action(_, _) -> {undefined, {error, <<"Invalid srpc action packet">>}}.
+
+srpc_route(16#01, ActionTerm) -> {lib_confirm, lib_confirm(ActionTerm)};
+
+srpc_route(16#10, ActionTerm) -> {user_exchange, user_exchange(ActionTerm)};
+
+srpc_route(16#11, ActionTerm) -> {user_confirm, user_confirm(ActionTerm)};
+
+srpc_route(16#a0, ActionTerm) -> {registration, registration(ActionTerm)};
+
+srpc_route(16#b0, ActionTerm) -> {server_time, server_time(ActionTerm)};
+
+srpc_route(16#c0, ActionTerm) -> {refresh, refresh(ActionTerm)};
+
+srpc_route(16#ff, ActionTerm) -> {close, close(ActionTerm)};
+
+srpc_route(_, __ActionTerm)   -> {error, <<"Invalid srpc action">>}.
 
 %%================================================================================================
 %%
@@ -138,7 +130,7 @@ lib_exchange(ClientId, <<16#00, ExchangeRequest/binary>>, SrpcHandler) ->
 %%   Lib Key Agreement Confirm
 %%
 %%------------------------------------------------------------------------------------------------
-lib_confirm(ClientId, ConfirmRequest, SrpcHandler) ->
+lib_confirm({ClientId, ConfirmRequest, SrpcHandler}) ->
   case SrpcHandler:get(ClientId, exchange) of
     {ok, ExchangeMap} ->
       SrpcHandler:delete(ClientId, exchange),
@@ -185,7 +177,7 @@ lib_confirm(ClientId, ConfirmRequest, SrpcHandler) ->
 %% Registration
 %%
 %%================================================================================================
-registration(ClientId, RegistrationRequest, SrpcHandler) ->
+registration({ClientId, RegistrationRequest, SrpcHandler}) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
       case srpc_lib:process_registration_request(ClientInfo, RegistrationRequest) of
@@ -264,7 +256,7 @@ registration(ClientId, RegistrationRequest, SrpcHandler) ->
 %%   User Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-user_exchange(ClientId, ExchangeRequest, SrpcHandler) ->
+user_exchange({ClientId, ExchangeRequest, SrpcHandler}) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
       case srpc_lib:user_key_process_exchange_request(ClientInfo, ExchangeRequest) of
@@ -316,7 +308,7 @@ user_exchange(ClientId, ExchangeRequest, SrpcHandler) ->
 %%   User Key Confirm
 %%
 %%------------------------------------------------------------------------------------------------
-user_confirm(ClientId, ConfirmRequest, SrpcHandler) ->
+user_confirm({ClientId, ConfirmRequest, SrpcHandler}) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, CryptClientInfo} ->
       case srpc_lib:user_key_process_confirm_request(CryptClientInfo, ConfirmRequest) of
@@ -373,7 +365,7 @@ user_confirm(ClientId, ConfirmRequest, SrpcHandler) ->
 %% Server Time
 %%
 %%================================================================================================
-server_time(ClientId, ServerTimeRequest, SrpcHandler) ->
+server_time({ClientId, ServerTimeRequest, SrpcHandler}) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
       %% To bypass req age check (which needs an accurate server time), don't use srpc_srv:decrypt
@@ -399,7 +391,7 @@ server_time(ClientId, ServerTimeRequest, SrpcHandler) ->
 %% Refresh Srpc Keys
 %%
 %%================================================================================================
-refresh(ClientId, RefreshRequest, SrpcHandler) ->
+refresh({ClientId, RefreshRequest, SrpcHandler}) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
       case decrypt(origin_client, ClientInfo, RefreshRequest, SrpcHandler) of
@@ -423,7 +415,7 @@ refresh(ClientId, RefreshRequest, SrpcHandler) ->
 %% Client Close
 %%
 %%================================================================================================
-close(ClientId, CloseRequest, SrpcHandler) ->
+close({ClientId, CloseRequest, SrpcHandler}) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
       case decrypt(origin_client, ClientInfo, CloseRequest, SrpcHandler) of

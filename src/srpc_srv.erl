@@ -79,6 +79,10 @@ srpc_route(16#10, ActionTerm) -> {lib_user_exchange, user_exchange(ActionTerm, t
 
 srpc_route(16#11, ActionTerm) -> {lib_user_confirm, user_confirm(ActionTerm)};
 
+srpc_route(16#20, ActionTerm) -> {user_exchange, user_exchange(ActionTerm, false)};
+
+srpc_route(16#21, ActionTerm) -> {user_confirm, user_confirm(ActionTerm)};
+
 srpc_route(16#a0, ActionTerm) -> {registration, registration(ActionTerm)};
 
 srpc_route(16#b0, ActionTerm) -> {server_time, server_time(ActionTerm)};
@@ -451,8 +455,8 @@ encrypt(Origin, ClientInfo, Nonce, Data) ->
 %%------------------------------------------------------------------------------------------------
 %%
 %%------------------------------------------------------------------------------------------------
-user_key_exchange_request(ClientId, ClientInfo,
-                          {UserId, PublicKey, RequestData}, SrpcHandler, Morph) ->
+user_key_exchange_request(ClientId, ClientInfo, {UserId, PublicKey, RequestData}, 
+                          SrpcHandler, Morph) ->
   case extract_req_data(RequestData, SrpcHandler) of
     {ok, {Nonce, ReqExchangeData}} ->
       RespExchangeData =
@@ -465,8 +469,16 @@ user_key_exchange_request(ClientId, ClientInfo,
       SrpcRespData = create_srpc_resp_data(Nonce, RespExchangeData),
       case SrpcHandler:get(UserId, registration) of
         {ok, SrpcRegistrationData} ->
-          user_key_exchange_response(ClientId, ClientInfo, SrpcRegistrationData, PublicKey, 
-                                     RespExchangeData, SrpcHandler);
+          case Morph of
+            true ->
+              user_key_exchange_response(ClientId, ClientInfo, SrpcRegistrationData,
+                                         PublicKey, RespExchangeData, SrpcHandler);
+            _ ->
+              UserClientId = SrpcHandler:client_id(),
+              UserClientInfo = maps:put(client_id, UserClientId, ClientInfo),
+              user_key_exchange_response(UserClientId, UserClientInfo, SrpcRegistrationData,
+                                         PublicKey, RespExchangeData, SrpcHandler)
+          end;
         undefined ->
           srpc_lib:user_key_create_exchange_response(ClientId, ClientInfo, invalid,
                                                      PublicKey, SrpcRespData)

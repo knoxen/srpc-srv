@@ -75,9 +75,9 @@ srpc_action(_, _) -> {undefined, {error, <<"Invalid srpc action packet">>}}.
 
 srpc_route(16#01, ActionTerm) -> {lib_confirm, lib_confirm(ActionTerm)};
 
-srpc_route(16#10, ActionTerm) -> {user_exchange, user_exchange(ActionTerm)};
+srpc_route(16#10, ActionTerm) -> {lib_user_exchange, user_exchange(ActionTerm, true)};
 
-srpc_route(16#11, ActionTerm) -> {user_confirm, user_confirm(ActionTerm)};
+srpc_route(16#11, ActionTerm) -> {lib_user_confirm, user_confirm(ActionTerm)};
 
 srpc_route(16#a0, ActionTerm) -> {registration, registration(ActionTerm)};
 
@@ -187,55 +187,13 @@ lib_confirm({ClientId, ConfirmRequest, SrpcHandler}) ->
 %%   User Key Exchange
 %%
 %%------------------------------------------------------------------------------------------------
-user_exchange({ClientId, ExchangeRequest, SrpcHandler}) ->
+user_exchange({ClientId, ExchangeRequest, SrpcHandler}, Morph) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
-
-      srpc_util:debug_info(?MODULE, user_exchange, ClientInfo),
-
+ srpc_util:debug_info(?MODULE, user_exchange, ClientInfo),
       case srpc_lib:user_key_process_exchange_request(ClientInfo, ExchangeRequest) of
-        {ok, {UserId, ClientPublicKey, SrpcReqData}} ->
-          case extract_req_data(SrpcReqData, SrpcHandler) of
-            {ok, {Nonce, ReqExchangeData}} ->
-              RespExchangeData =
-                case erlang:function_exported(SrpcHandler, user_exchange_data, 2) of
-                  true ->
-                    SrpcHandler:user_exchange_data(UserId, ReqExchangeData);
-                  false ->
-                    <<>>
-                end,
-              SrpcRespData = create_srpc_resp_data(Nonce, RespExchangeData),
-              case SrpcHandler:get(UserId, registration) of
-                {ok, SrpcRegistrationData} ->
-
-
-                  
-                  case srpc_lib:user_key_create_exchange_response(ClientId,
-                                                                  ClientInfo,
-                                                                  SrpcRegistrationData,
-                                                                  ClientPublicKey,
-                                                                  SrpcRespData) of
-                    {ok, {ExchangeMap, ExchangeResponse}} ->
-
-      srpc_util:debug_info(?MODULE, user_exchange, ExchangeMap),
-
-                      ExchangeClientId = maps:get(client_id, ExchangeMap),
-                      case SrpcHandler:put(ExchangeClientId, ExchangeMap, exchange) of
-                        ok ->
-                          {ok, ExchangeResponse};
-                        Error ->
-                          Error
-                      end;
-                    Error ->
-                      Error
-                  end;
-                undefined ->
-                  srpc_lib:user_key_create_exchange_response(ClientId, ClientInfo, invalid,
-                                                             ClientPublicKey, SrpcRespData)
-              end;
-            InvalidError ->
-              InvalidError
-          end;
+        {ok, ExchangeTerm} ->
+          user_key_exchange_request(ClientId, ClientInfo, ExchangeTerm, SrpcHandler, Morph);
         Error ->
           Error
       end;
@@ -492,7 +450,51 @@ encrypt(Origin, ClientInfo, Nonce, Data) ->
 %%================================================================================================
 %%------------------------------------------------------------------------------------------------
 %%
+%%------------------------------------------------------------------------------------------------
+user_key_exchange_request(ClientId, ClientInfo,
+                          {UserId, PublicKey, RequestData}, SrpcHandler, Morph) ->
+  case extract_req_data(RequestData, SrpcHandler) of
+    {ok, {Nonce, ReqExchangeData}} ->
+      RespExchangeData =
+        case erlang:function_exported(SrpcHandler, user_exchange_data, 2) of
+          true ->
+            SrpcHandler:user_exchange_data(UserId, ReqExchangeData);
+          false ->
+            <<>>
+        end,
+      SrpcRespData = create_srpc_resp_data(Nonce, RespExchangeData),
+      case SrpcHandler:get(UserId, registration) of
+        {ok, SrpcRegistrationData} ->
+          user_key_exchange_response(ClientId, ClientInfo, SrpcRegistrationData, PublicKey, 
+                                     RespExchangeData, SrpcHandler);
+        undefined ->
+          srpc_lib:user_key_create_exchange_response(ClientId, ClientInfo, invalid,
+                                                     PublicKey, SrpcRespData)
+      end;
+    InvalidError ->
+      InvalidError
+  end.
+
+%%------------------------------------------------------------------------------------------------
 %%
+%%------------------------------------------------------------------------------------------------
+user_key_exchange_response(ClientId, ClientInfo, RegData, PublicKey, RespData, SrpcHandler) ->
+  case srpc_lib:user_key_create_exchange_response(ClientId, ClientInfo, RegData, 
+                                                  PublicKey, RespData) of
+    {ok, {ExchangeMap, ExchangeResponse}} ->
+  srpc_util:debug_info(?MODULE, user_exchange, ExchangeMap),
+      ExchangeClientId = maps:get(client_id, ExchangeMap),
+      case SrpcHandler:put(ExchangeClientId, ExchangeMap, exchange) of
+        ok ->
+          {ok, ExchangeResponse};
+        Error ->
+          Error
+      end;
+    Error ->
+      Error
+  end.
+
+%%------------------------------------------------------------------------------------------------
 %%
 %%------------------------------------------------------------------------------------------------
 extract_time_data(<<?HDR_VSN:?HDR_BITS, ClientTime:?TIME_BITS,
@@ -504,8 +506,6 @@ extract_time_data(_) ->
 
 
 %%------------------------------------------------------------------------------------------------
-%%
-%%
 %%
 %%------------------------------------------------------------------------------------------------
 extract_req_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS, 
@@ -553,8 +553,6 @@ extract_req_data(_ReqData, _SrpcHandler) ->
 
 %%------------------------------------------------------------------------------------------------
 %%
-%%
-%%
 %%------------------------------------------------------------------------------------------------
 create_srpc_resp_data(Nonce, RespData) ->
   NonceLen = erlang:byte_size(Nonce),
@@ -562,9 +560,7 @@ create_srpc_resp_data(Nonce, RespData) ->
   <<?HDR_VSN:?HDR_BITS, Time:?TIME_BITS, NonceLen:?NONCE_BITS, Nonce/binary, RespData/binary>>.
 
 %%------------------------------------------------------------------------------------------------
-%%
-%%
-%%
+%%  
 %%------------------------------------------------------------------------------------------------
 system_time() ->
   erlang:system_time(second).

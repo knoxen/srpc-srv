@@ -156,10 +156,6 @@ lib_confirm({ClientId, ConfirmRequest, SrpcHandler}) ->
               case srpc_lib:lib_key_create_confirm_response(ExchangeMap, ClientChallenge,
                                                             SrpcRespData) of
                 {ok, ClientInfo, ConfirmResponse} ->
-
-                  srpc_util:debug_info(?MODULE, lib_confirm, ClientInfo),
-
-
                   case SrpcHandler:put(ClientId, ClientInfo, key) of
                     ok ->
                       {ok, ConfirmResponse};
@@ -194,7 +190,6 @@ lib_confirm({ClientId, ConfirmRequest, SrpcHandler}) ->
 user_exchange({ClientId, ExchangeRequest, SrpcHandler}, Morph) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
- srpc_util:debug_info(?MODULE, user_exchange, ClientInfo),
       case srpc_lib:user_key_process_exchange_request(ClientInfo, ExchangeRequest) of
         {ok, ExchangeTerm} ->
           user_key_exchange_request(ClientId, ClientInfo, ExchangeTerm, SrpcHandler, Morph);
@@ -469,19 +464,11 @@ user_key_exchange_request(ClientId, ClientInfo, {UserId, PublicKey, RequestData}
       SrpcRespData = create_srpc_resp_data(Nonce, RespExchangeData),
       case SrpcHandler:get(UserId, registration) of
         {ok, SrpcRegistrationData} ->
-          case Morph of
-            true ->
-              user_key_exchange_response(ClientId, ClientInfo, SrpcRegistrationData,
-                                         PublicKey, RespExchangeData, SrpcHandler);
-            _ ->
-              UserClientId = SrpcHandler:client_id(),
-              UserClientInfo = maps:put(client_id, UserClientId, ClientInfo),
-              user_key_exchange_response(UserClientId, UserClientInfo, SrpcRegistrationData,
-                                         PublicKey, RespExchangeData, SrpcHandler)
-          end;
+          user_key_exchange_response(ClientId, ClientInfo, SrpcRegistrationData,
+                                     PublicKey, RespExchangeData, SrpcHandler, Morph);
         undefined ->
           srpc_lib:user_key_create_exchange_response(ClientId, ClientInfo, invalid,
-                                                     PublicKey, SrpcRespData)
+                                                     PublicKey, SrpcRespData, Morph)
       end;
     InvalidError ->
       InvalidError
@@ -490,13 +477,20 @@ user_key_exchange_request(ClientId, ClientInfo, {UserId, PublicKey, RequestData}
 %%------------------------------------------------------------------------------------------------
 %%
 %%------------------------------------------------------------------------------------------------
-user_key_exchange_response(ClientId, ClientInfo, RegData, PublicKey, RespData, SrpcHandler) ->
-  case srpc_lib:user_key_create_exchange_response(ClientId, ClientInfo, RegData, 
+user_key_exchange_response(ClientId, ClientInfo, RegData, PublicKey, RespData,
+                           SrpcHandler, Morph) ->
+  UserClientId =
+    case Morph of
+      true ->
+        ClientId;
+      _ ->
+        SrpcHandler:client_id()
+    end,
+  case srpc_lib:user_key_create_exchange_response(UserClientId, ClientInfo, RegData,
                                                   PublicKey, RespData) of
     {ok, {ExchangeMap, ExchangeResponse}} ->
-  srpc_util:debug_info(?MODULE, user_exchange, ExchangeMap),
-      ExchangeClientId = maps:get(client_id, ExchangeMap),
-      case SrpcHandler:put(ExchangeClientId, ExchangeMap, exchange) of
+      UserClientInfo = maps:put(client_id, UserClientId, ExchangeMap),
+      case SrpcHandler:put(UserClientId, UserClientInfo, exchange) of
         ok ->
           {ok, ExchangeResponse};
         Error ->

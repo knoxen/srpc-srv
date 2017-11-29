@@ -2,7 +2,7 @@
 
 -author("paul@knoxen.com").
 
--type storage() :: exchange | key | registration.
+-include ("srpc_srv.hrl").
 
 %%================================================================================================
 %% @doc SRPC handler functions
@@ -11,10 +11,10 @@
 %%------------------------------------------------------------------------------------------------
 %% @doc Generate Client ID
 %%
-%% Generate a probabilistically uniquie Client ID. For easy control over the characteristics of
-%% the Client ID consider using EntropyString for either 
+%% Generate a probabilistically uniquie Client ID. For explicit control over the characteristics
+%% of the generated Client ID consider using either the
 %% <a href=https://github.com/EntropyString/Erlang>Erlang</a> or
-%% <a href=https://github.com/EntropyString/Elixir>Elixir</a>.
+%% <a href=https://github.com/EntropyString/Elixir>Elixir</a> version of EntropyString.
 %%
 %% Returns binary <code>ClientId</code>
 %%------------------------------------------------------------------------------------------------
@@ -22,30 +22,71 @@
   ClientID :: binary().
 
 %%------------------------------------------------------------------------------------------------
-%% @doc Put <code>Value</code> for <code>Key</code> under storage <code>Type</code>
+%% @doc Put <code>ClientInfo</code> for <code>ClientId</code> in exchange store.
 %%
 %% Returns <code>ok</code> or <code>{error, Reason}</code>
 %%------------------------------------------------------------------------------------------------
--callback put(Key :: binary(), Value :: term(), Type :: storage()) ->
+-callback put_exchange(ClientId :: client_id(), ClientInfo :: client_info()) ->
+  ok | error_msg().
+
+%%------------------------------------------------------------------------------------------------
+%% @doc Put <code>ClientInfo</code> for <code>ClientId</code> in client store.
+%%
+%% Returns <code>ok</code> or <code>{error, Reason}</code>
+%%------------------------------------------------------------------------------------------------
+-callback put_client(ClientId :: client_id(), ClientInfo :: client_info()) ->
+  ok | error_msg().
+
+%%------------------------------------------------------------------------------------------------
+%% @doc Put <code>Registration</code> for <code>UserId</code> in registration store.
+%%
+%% Returns <code>ok</code> or <code>{error, Reason}</code>
+%%------------------------------------------------------------------------------------------------
+-callback put_registration(UserId :: user_id(), Registration :: registration()) ->
+  ok | error_msg().
+
+%%------------------------------------------------------------------------------------------------
+%% @doc Get <code>ClientInfo</code> for <code>ClientId</code> from the exchange store.
+%%
+%% Return the stored <code>ClientInfo</code> or <code>undefined</code>.
+%%------------------------------------------------------------------------------------------------
+%% -spec get_exchange(ClientId) -> Result when
+%%     ClientId :: client_id(),
+%%     Result   :: {ok, client_info()} | undefined.
+%%------------------------------------------------------------------------------------------------
+-callback get_exchange(ClientId :: client_id()) ->
+  {ok, ClientInfo :: client_info()} | undefined.
+
+%%------------------------------------------------------------------------------------------------
+%% @doc Get <code>ClientInfo</code> for <code>ClientId</code> from the client store.
+%%
+%% Return the stored <code>ClientInfo</code> or <code>undefined</code>.
+%%------------------------------------------------------------------------------------------------
+-callback get_client(ClientId :: client_id()) ->
+  {ok, ClientInfo :: client_info()} | undefined.
+
+%%------------------------------------------------------------------------------------------------
+%% @doc Get <code>Registration</code> for <code>UserId</code> from the registration store.
+%%
+%% Return the stored <code>Registration</code> or <code>undefined</code>.
+%%------------------------------------------------------------------------------------------------
+-callback get_registration(UserId :: user_id()) ->
+  {ok, Registration :: registration()} | undefined.
+
+%%------------------------------------------------------------------------------------------------
+%% @doc Delete <code>ClientId</code> in the exchange store.
+%%
+%% Returns <code>ok</code> or <code>{error, Reason}</code>
+%%------------------------------------------------------------------------------------------------
+-callback delete_exchange(ClientId :: client_id()) ->
   ok | {error, Reason :: string()}.
 
 %%------------------------------------------------------------------------------------------------
-%% @doc Get value for <code>Key</code> in storage <code>Type</code>
-%%
-%% Return the <code>value</code> stored or <code>undefined</code>
-%%------------------------------------------------------------------------------------------------
--callback get(Key :: binary(), Type :: storage) ->
-  {ok, Value :: term()} | undefined.
-
-%%------------------------------------------------------------------------------------------------
-%% @doc Delete value for <code>Key</code> in storage <code>Type</code>
-%%
-%% <code>Type</code> does not include <code>registration</code>, which should be managed
-%%  through an existing, valid client and hence should be handled via application API calls.
+%% @doc Delete <code>ClientId</code> in the client store.
 %%
 %% Returns <code>ok</code> or <code>{error, Reason}</code>
 %%------------------------------------------------------------------------------------------------
--callback delete(Key :: binary(), Type :: exchange | key) ->
+-callback delete_client(ClientId :: binary()) ->
   ok | {error, Reason :: string()}.
 
 %% CxTBD Optional functions

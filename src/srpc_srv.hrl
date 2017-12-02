@@ -50,9 +50,9 @@
                           ,c_pub_key    => public_key()
                           ,s_ephem_keys => public_keys()
                           ,sym_alg      => sym_alg()
+                          ,sha_alg      => sha_alg()
                           ,client_key   => sym_key()
                           ,server_key   => sym_key()
-                          ,sha_alg      => sha_alg()
                           ,hmac_key     => hmac_key()
                           }.
 

@@ -12,8 +12,8 @@
 -export([parse_packet/2
         ,lib_exchange/2
         ,srpc_action/2
-        ,unwrap/4
-        ,wrap/4
+        ,unwrap/3
+        ,wrap/3
         ]).
 
 %%==================================================================================================
@@ -388,7 +388,7 @@ server_time({ClientId, ServerTimeRequest, SrpcHandler}) ->
             {ok, {Nonce, Data}} ->
               Time = system_time(),
               TimeRespData = <<Time:?TIME_BITS, Data/binary>>,
-              wrap(origin_server, ClientInfo, Nonce, TimeRespData);
+              wrap(ClientInfo, Nonce, TimeRespData);
             Error ->
               Error
           end;
@@ -411,15 +411,15 @@ server_time({ClientId, ServerTimeRequest, SrpcHandler}) ->
     SrpcHandler :: module(),
     Result      :: ok_response() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
-refresh({ClientId, RefreshRequest, SrpcHandler}) ->
+refresh({ClientId, Request, SrpcHandler}) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
-      case unwrap(origin_client, ClientInfo, RefreshRequest, SrpcHandler) of
-        {ok, {Nonce, Data}} ->
-          NewClientInfo = srpc_lib:refresh_keys(ClientInfo, Data),
+      case unwrap(ClientInfo, Request, SrpcHandler) of
+        {ok, {Nonce, Salt}} ->
+          NewClientInfo = srpc_lib:refresh_keys(ClientInfo, Salt),
           case SrpcHandler:put_client(ClientId, NewClientInfo) of
             ok ->
-              wrap(origin_server, NewClientInfo, Nonce, Data);
+              wrap(NewClientInfo, Nonce, Salt);
             Error ->
               Error
           end;
@@ -445,10 +445,10 @@ refresh({ClientId, RefreshRequest, SrpcHandler}) ->
 close({ClientId, CloseRequest, SrpcHandler}) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
-      case unwrap(origin_client, ClientInfo, CloseRequest, SrpcHandler) of
+      case unwrap(ClientInfo, CloseRequest, SrpcHandler) of
         {ok, {Nonce, Data}} ->
           SrpcHandler:delete_client(ClientId),
-          wrap(origin_server, ClientInfo, Nonce, Data);
+          wrap(ClientInfo, Nonce, Data);
         Error ->
           Error
       end;
@@ -488,15 +488,14 @@ client_info(ClientId, SrpcHandler) ->
 %%--------------------------------------------------------------------------------------------------
 %%  Unwrap data
 %%--------------------------------------------------------------------------------------------------
--spec unwrap(Origin, ClientInfo, Data, SrpcHandler) -> Result when
-    Origin      :: origin(),
+-spec unwrap(ClientInfo, Data, SrpcHandler) -> Result when
     ClientInfo  :: client_info(),
     Data        :: binary(),
     SrpcHandler :: module(),
     Result      :: nonced_data() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
-unwrap(Origin, ClientInfo, Data, SrpcHandler) ->
-  case srpc_lib:decrypt(Origin, ClientInfo, Data) of
+unwrap(ClientInfo, Data, SrpcHandler) ->
+  case srpc_lib:decrypt(origin_client, ClientInfo, Data) of
     {ok, SrpcData} ->
       parse_request_data(SrpcData, SrpcHandler);
     Invalid ->
@@ -506,16 +505,15 @@ unwrap(Origin, ClientInfo, Data, SrpcHandler) ->
 %%--------------------------------------------------------------------------------------------------
 %%  Wrap data
 %%--------------------------------------------------------------------------------------------------
--spec wrap(Origin, ClientInfo, Nonce, Data) -> Result when
-    Origin      :: origin(),
+-spec wrap(ClientInfo, Nonce, Data) -> Result when
     ClientInfo  :: client_info(),
     Nonce       :: binary(),
     Data        :: binary(),
     Result      :: binary() | error_msg().
 %%--------------------------------------------------------------------------------------------------
-wrap(Origin, ClientInfo, Nonce, Data) ->
+wrap(ClientInfo, Nonce, Data) ->
   SrpcData = create_srpc_resp_data(Nonce, Data),
-  srpc_lib:encrypt(Origin, ClientInfo, SrpcData).
+  srpc_lib:encrypt(origin_server, ClientInfo, SrpcData).
 
 %%==================================================================================================
 %%

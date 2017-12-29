@@ -11,7 +11,7 @@
 %%==================================================================================================
 -export([parse_packet/2
         ,lib_exchange/2
-        ,srpc_action/2
+        ,srpc_action/3
         ,unwrap/3
         ,wrap/3
         ]).
@@ -64,15 +64,20 @@ packet_client_info(Type, <<IdLen:8, Id:IdLen/binary, Data/binary>>, SrpcHandler)
 %%--------------------------------------------------------------------------------------------------
 %%  SRPC actions
 %%--------------------------------------------------------------------------------------------------
--spec srpc_action(Data, SrpcHandler) -> Result when
+-spec srpc_action(ClientInfo, Data, SrpcHandler) -> Result when
+    ClientInfo  :: client_info(),
     Data        :: data_in(),
     SrpcHandler :: module(),
     Result      :: {atom(), ok_response() | error_msg() | invalid_msg()}.
 %%--------------------------------------------------------------------------------------------------
-srpc_action(<<16#10, L:8, ClientId:L/binary, SrpcCode:8, ActionData/binary>>, SrpcHandler) ->
+srpc_action(#{client_id := ClientId}, <<SrpcCode:8, ActionData/binary>>, SrpcHandler) ->
   srpc_route(SrpcCode, {ClientId, ActionData, SrpcHandler});
 
-srpc_action(_, _) -> {undefined, {error, <<"Invalid srpc action packet">>}}.
+srpc_action(#{client_id := _ClientId}, _, _) ->
+  {undefined, {error, <<"Invalid srpc action packet">>}};
+
+srpc_action(_, _, _) ->
+  {undefined, {error, <<"Client info missing client_id">>}}.
 
 %%--------------------------------------------------------------------------------------------------
 %%  Route SRPC actions

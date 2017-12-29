@@ -24,8 +24,8 @@
 %%--------------------------------------------------------------------------------------------------
 %%  Parse packet
 %%--------------------------------------------------------------------------------------------------
--spec parse_packet(Data, SrpcHandler) -> Result when
-    Data        :: data_in(),
+-spec parse_packet(ReqData, SrpcHandler) -> Result when
+    ReqData     :: data_in(),
     SrpcHandler :: module(),
     Result      :: {lib_exchange, binary()} |
                    {srpc_action, client_info(), binary()} |
@@ -111,23 +111,23 @@ srpc_route(_, __ActionTerm)   -> {error, <<"Invalid srpc action">>}.
 %%--------------------------------------------------------------------------------------------------
 %%  Lib key exchange
 %%--------------------------------------------------------------------------------------------------
--spec lib_exchange(DataIn, SrpcHandler) -> Result when
-    DataIn      :: data_in(),
-    SrpcHandler :: module(),
-    Result      :: {ok, binary()} | error_msg() | invalid_msg().
+-spec lib_exchange(ExchangeData, SrpcHandler) -> Result when
+    ExchangeData :: data_in(),
+    SrpcHandler  :: module(),
+    Result       :: {ok, binary()} | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
-lib_exchange(<<16#00, ExchangeRequest/binary>>, SrpcHandler) ->
-  case srpc_lib:lib_key_process_exchange_request(ExchangeRequest) of
-    {ok, {ClientPublicKey, ReqExchangeData}} ->
-      RespExchangeData =
+lib_exchange(ExchangeData, SrpcHandler) ->
+  case srpc_lib:lib_key_process_exchange_request(ExchangeData) of
+    {ok, {ClientPublicKey, ReqData}} ->
+      RespData =
         case erlang:function_exported(SrpcHandler, lib_exchange_data, 1) of
           true ->
-            SrpcHandler:lib_exchange_data(ReqExchangeData);
+            SrpcHandler:lib_exchange_data(ReqData);
           false ->
             <<>>
         end,
       ClientId = SrpcHandler:client_id(),
-      case srpc_lib:lib_key_create_exchange_response(ClientId, ClientPublicKey, RespExchangeData) of
+      case srpc_lib:lib_key_create_exchange_response(ClientId, ClientPublicKey, RespData) of
         {ok, {ExchangeMap, ExchangeResponse}} ->
           ClientId = maps:get(client_id, ExchangeMap),
           case SrpcHandler:put_exchange(ClientId, ExchangeMap) of
@@ -209,10 +209,10 @@ lib_confirm({ClientId, ConfirmRequest, SrpcHandler}) ->
     Morph       :: boolean(),
     Result      :: ok_response() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
-user_exchange({ClientId, ExchangeRequest, SrpcHandler}, Morph) ->
+user_exchange({ClientId, ExchangeData, SrpcHandler}, Morph) ->
   case client_info(ClientId, SrpcHandler) of
     {ok, ClientInfo} ->
-      case srpc_lib:user_key_process_exchange_request(ClientInfo, ExchangeRequest) of
+      case srpc_lib:user_key_process_exchange_request(ClientInfo, ExchangeData) of
         {ok, ExchangeTerm} ->
           user_key_exchange_request(ClientId, ClientInfo, ExchangeTerm, SrpcHandler, Morph);
         Error ->

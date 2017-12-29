@@ -35,33 +35,32 @@
 %%--------------------------------------------------------------------------------------------------
 parse_packet(<<16#00, Data/binary>>, _SrpcHandler) ->
   {lib_exchange, Data};
-parse_packet(<<16#10, IdLen:8, Id:IdLen/binary, Data/binary>>, SrpcHandler) ->
-  packet_client({srpc_action, Id, Data}, SrpcHandler);
-parse_packet(<<16#ff, IdLen:8, Id:IdLen/binary, Data/binary>>, SrpcHandler) ->
-  packet_client({app_request, Id, Data}, SrpcHandler);
+parse_packet(<<16#10, Data/binary>>, SrpcHandler) ->
+  packet_client_info(srpc_action, Data, SrpcHandler);
+parse_packet(<<16#ff, Data/binary>>, SrpcHandler) ->
+  packet_client_info(app_request, Data, SrpcHandler);
 parse_packet(_, _SrpcHandler) ->
   {error, <<"Invalid SRPC packet">>}.
 
 %%--------------------------------------------------------------------------------------------------
 %%  Packet client info
 %%--------------------------------------------------------------------------------------------------
--spec packet_client({Type, ClientId, Data}, SrpcHandler) -> Result when
+-spec packet_client_info(Type, Data, SrpcHandler) -> Result when
     Type        :: srpc_action | app_request,
-    ClientId    :: client_id(),
     Data        :: binary(),
     SrpcHandler :: module(),
     Result      :: {srpc_action, client_info(), binary()} |
                    {app_request, client_info(), binary()} |
                    invalid_msg().
 %%--------------------------------------------------------------------------------------------------
-packet_client({Type, ClientId, Data}, SrpcHandler) ->
-  case client_info(ClientId, SrpcHandler) of
+packet_client_info(Type, <<IdLen:8, Id:IdLen/binary, Data/binary>>, SrpcHandler) ->
+  case client_info(Id, SrpcHandler) of
     {ok, ClientInfo} ->
       {Type, ClientInfo, Data};
     Invalid ->
       Invalid
   end.
-
+  
 %%--------------------------------------------------------------------------------------------------
 %%  SRPC actions
 %%--------------------------------------------------------------------------------------------------

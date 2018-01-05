@@ -1,9 +1,9 @@
 srpc_srv
 =====
 
-An OTP library
+Base SRPC server library.
 
 Build
 -----
 
-    $ rebar3 compile
+    $ rebar3 as prod compile

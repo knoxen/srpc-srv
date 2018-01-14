@@ -39,21 +39,21 @@
 -type conn_id()      :: binary().
 -type user_id()      :: binary().
 
--type ephemeral_key()  :: binary().
--type ephemeral_keys() :: {ephemeral_key(), ephemeral_key()}.
--type aes_block()      :: <<_:128>>.
--type sym_key()        :: <<_:128>> | <<_:192>> | <<_:256>>.
--type hmac_key()       :: <<_:256>>.
--type sym_alg()        :: aes128 | aes192 | aes256.
--type sha_alg()        :: sha256 | sha384 | sha512.
--type conn_info()      :: #{conn_id         => conn_id()
-                           ,exch_public_key => ephemeral_key()
-                           ,exch_key_pair   => ephemeral_keys()
-                           ,sym_alg         => sym_alg()
-                           ,sha_alg         => sha_alg()
-                           ,client_sym_key  => sym_key()
-                           ,server_key      => sym_key()
-                           ,hmac_key        => hmac_key()
+-type exch_key()      :: binary().
+-type exch_key_pair() :: {exch_key(), exch_key()}.
+-type aes_block()     :: <<_:128>>.
+-type sym_key()       :: <<_:128>> | <<_:192>> | <<_:256>>.
+-type hmac_key()      :: <<_:256>>.
+-type sym_alg()       :: aes128 | aes192 | aes256.
+-type sha_alg()       :: sha256 | sha384 | sha512.
+-type conn_info()     :: #{conn_id         => conn_id()
+                          ,exch_public_key => exch_key()
+                          ,exch_key_pair   => exch_key_pair()
+                          ,sym_alg         => sym_alg()
+                          ,sha_alg         => sha_alg()
+                          ,client_sym_key  => sym_key()
+                          ,server_key      => sym_key()
+                          ,hmac_key        => hmac_key()
                           }.
 
 -type registration() :: #{user_id  => binary()

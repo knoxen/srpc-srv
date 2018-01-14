@@ -36,7 +36,7 @@
 
 -type data_in()      :: <<_:_*8>>.
 
--type client_id()    :: binary().
+-type conn_id()      :: binary().
 -type user_id()      :: binary().
 
 -type ephemeral_key()  :: binary().
@@ -46,7 +46,7 @@
 -type hmac_key()       :: <<_:256>>.
 -type sym_alg()        :: aes128 | aes192 | aes256.
 -type sha_alg()        :: sha256 | sha384 | sha512.
--type client_info()    :: #{client_id             => client_id()
+-type conn_info()      :: #{conn_id               => conn_id()
                            ,client_public_key     => ephemeral_key()
                            ,server_ephemeral_keys => ephemeral_keys()
                            ,sym_alg               => sym_alg()

@@ -130,11 +130,16 @@ lib_exchange(ExchangeData, SrpcHandler) ->
           false ->
             <<>>
         end,
+
       ConnId = SrpcHandler:conn_id(),
-      case srpc_lib:lib_key_create_exchange_response(ConnId, ClientPublicKey, RespData) of
-        {ok, {ExchangeMap, ExchangeResponse}} ->
-          ConnId = maps:get(conn_id, ExchangeMap),
-          case SrpcHandler:put_exchange(ConnId, ExchangeMap) of
+      ConnInfo = #{conn_type       => lib
+                  ,entity_id       => srpc_lib:srpc_id()
+                  ,conn_id         => ConnId
+                  ,exch_public_key => ClientPublicKey},
+
+      case srpc_lib:lib_key_create_exchange_response(ConnInfo, RespData) of
+        {ok, {ConnInfo2, ExchangeResponse}} ->
+          case SrpcHandler:put_exchange(ConnId, ConnInfo2) of
             ok ->
               {ok, ExchangeResponse};
             Error ->

@@ -117,7 +117,7 @@ srpc_route(_, __ActionTerm)   -> {error, <<"Invalid srpc action">>}.
     Result       :: {ok, binary()} | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 lib_exchange(ExchangeData) ->
-  case srpc_lib:lib_key_process_exchange_request(ExchangeData) of
+  case srpc_lib:process_lib_key_exchange_request(ExchangeData) of
     {ok, {ClientPublicKey, ReqData}} ->
       SrpcHandler = srpc_handler(),
       RespData =
@@ -134,7 +134,7 @@ lib_exchange(ExchangeData) ->
                   ,conn_id         => ConnId
                   ,exch_public_key => ClientPublicKey},
 
-      case srpc_lib:lib_key_create_exchange_response(ConnInfo, RespData) of
+      case srpc_lib:create_lib_key_exchange_response(ConnInfo, RespData) of
         {ok, {ConnInfo2, ExchangeResponse}} ->
           case SrpcHandler:put_exchange(ConnId, ConnInfo2) of
             ok ->
@@ -162,7 +162,7 @@ lib_confirm({ConnId, ConfirmRequest}) ->
   case SrpcHandler:get_exchange(ConnId) of
     {ok, ExchConnInfo} ->
       SrpcHandler:delete_exchange(ConnId),
-      case srpc_lib:lib_key_process_confirm_request(ExchConnInfo, ConfirmRequest) of
+      case srpc_lib:process_lib_key_confirm_request(ExchConnInfo, ConfirmRequest) of
         {ok, {ClientChallenge, SrpcReqData}} ->
           case parse_no_timing_data(SrpcReqData) of
             {ok, {Nonce, ConfirmReqData}} ->
@@ -176,7 +176,7 @@ lib_confirm({ConnId, ConfirmRequest}) ->
               Time = system_time(),
               TimeRespData = <<Time:?TIME_BITS, ConfirmRespData/binary>>,
               SrpcRespData = create_srpc_resp_data(Nonce, TimeRespData),
-              case srpc_lib:lib_key_create_confirm_response(ExchConnInfo, ClientChallenge,
+              case srpc_lib:create_lib_key_confirm_response(ExchConnInfo, ClientChallenge,
                                                             SrpcRespData) of
                 {ok, ConnInfo, ConfirmResponse} ->
                   case SrpcHandler:put_conn(ConnId, ConnInfo) of
@@ -217,7 +217,7 @@ lib_confirm({ConnId, ConfirmRequest}) ->
 user_exchange({ConnId, ExchangeData}, Morph) ->
   case conn_info(ConnId) of
     {ok, ConnInfo} ->
-      case srpc_lib:user_key_process_exchange_request(ConnInfo, ExchangeData) of
+      case srpc_lib:process_user_key_exchange_request(ConnInfo, ExchangeData) of
         {ok, ExchangeTerm} ->
           user_key_exchange_request(ConnId, ConnInfo, ExchangeTerm, Morph);
         Error ->
@@ -238,7 +238,7 @@ user_exchange({ConnId, ExchangeData}, Morph) ->
 user_confirm({ConnId, ConfirmRequest}) ->
   case conn_info(ConnId) of
     {ok, CryptConnInfo} ->
-      case srpc_lib:user_key_process_confirm_request(CryptConnInfo, ConfirmRequest) of
+      case srpc_lib:process_user_key_confirm_request(CryptConnInfo, ConfirmRequest) of
         {ok, {ClientChallenge, SrpcReqConfirmData}} ->
           SrpcHandler = srpc_handler(),
           case SrpcHandler:get_exchange(ConnId) of
@@ -255,7 +255,7 @@ user_confirm({ConnId, ConfirmRequest}) ->
                         <<>>
                     end,
                   SrpcRespData = create_srpc_resp_data(Nonce, RespConfirmData),
-                  case srpc_lib:user_key_create_confirm_response(CryptConnInfo, ExchConnInfo,
+                  case srpc_lib:create_user_key_confirm_response(CryptConnInfo, ExchConnInfo,
                                                                  ClientChallenge,
                                                                  SrpcRespData) of
                     {ok, ConnInfo, ConfirmResponse} ->
@@ -277,7 +277,7 @@ user_confirm({ConnId, ConfirmRequest}) ->
               Nonce = crypto:strong_rand_bytes(erlang:trunc(?NONCE_BITS/8)),
               SrpcRespData = create_srpc_resp_data(Nonce, <<>>),
               {_, _ConnInfo, ConfirmResponse} =
-                srpc_lib:user_key_create_confirm_response(CryptConnInfo, invalid,
+                srpc_lib:create_user_key_confirm_response(CryptConnInfo, invalid,
                                                           ClientChallenge, SrpcRespData),
               {ok, ConfirmResponse}
           end;
@@ -552,7 +552,7 @@ user_key_exchange_request(ConnId, ConnInfo, {UserId, PublicKey, RequestData}, Mo
         {ok, Registration} ->
           user_key_exchange_response(ConnId, ConnInfo, Registration, PublicKey, RespData, Morph);
         undefined ->
-          srpc_lib:user_key_create_exchange_response(ConnId, ConnInfo, invalid, PublicKey, 
+          srpc_lib:create_user_key_exchange_response(ConnId, ConnInfo, invalid, PublicKey, 
                                                      SrpcRespData)
       end;
     Invalid ->
@@ -581,7 +581,7 @@ user_key_exchange_response(ConnId, ConnInfo, Registration, PublicKey, RespData, 
       _ ->
         SrpcHandler:conn_id()
     end,
-  case srpc_lib:user_key_create_exchange_response(UserConnId, ConnInfo, Registration,
+  case srpc_lib:create_user_key_exchange_response(UserConnId, ConnInfo, Registration,
                                                   PublicKey, RespData) of
     {ok, {ExchConnInfo, ExchangeResponse}} ->
       UserConnInfo = maps:put(conn_id, UserConnId, ExchConnInfo),

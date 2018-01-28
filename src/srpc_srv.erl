@@ -9,11 +9,11 @@
 %% API exports
 %%
 %%==================================================================================================
--export([parse_packet/1
-        ,lib_exchange/1
-        ,srpc_action/2
-        ,unwrap/2
-        ,wrap/3
+-export([parse_packet/1,
+         lib_exchange/1,
+         srpc_action/2,
+         unwrap/2,
+         wrap/3
         ]).
 
 %%==================================================================================================
@@ -25,12 +25,12 @@
 %%  Parse packet
 %%--------------------------------------------------------------------------------------------------
 -spec parse_packet(ReqData) -> Result when
-    ReqData     :: data_in(),
-    Result      :: {lib_exchange, binary()} |
-                   {srpc_action, conn_info(), binary()} |
-                   {app_request, conn_info(), binary()} |
-                   invalid_msg() |
-                   error_msg().
+    ReqData :: data_in(),
+    Result  :: {lib_exchange, binary()} |
+               {srpc_action, conn_info(), binary()} |
+               {app_request, conn_info(), binary()} |
+               invalid_msg() |
+               error_msg().
 %%--------------------------------------------------------------------------------------------------
 parse_packet(<<16#00, Data/binary>>) ->
   {lib_exchange, Data};
@@ -45,11 +45,11 @@ parse_packet(_) ->
 %%  Packet conn info
 %%--------------------------------------------------------------------------------------------------
 -spec packet_conn_info(Type, Data) -> Result when
-    Type        :: srpc_action | app_request,
-    Data        :: binary(),
-    Result      :: {srpc_action, conn_info(), binary()} |
-                   {app_request, conn_info(), binary()} |
-                   invalid_msg().
+    Type   :: srpc_action | app_request,
+    Data   :: binary(),
+    Result :: {srpc_action, conn_info(), binary()} |
+              {app_request, conn_info(), binary()} |
+              invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 packet_conn_info(Type, <<IdLen:8, Id:IdLen/binary, Data/binary>>) ->
   case conn_info(Id) of
@@ -58,7 +58,7 @@ packet_conn_info(Type, <<IdLen:8, Id:IdLen/binary, Data/binary>>) ->
     Invalid ->
       Invalid
   end.
-  
+
 %%--------------------------------------------------------------------------------------------------
 %%  SRPC actions
 %%--------------------------------------------------------------------------------------------------
@@ -111,6 +111,8 @@ srpc_route(_, __ActionTerm)   -> {error, <<"Invalid srpc action">>}.
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
 %%  Lib key exchange
+%%    
+%%
 %%--------------------------------------------------------------------------------------------------
 -spec lib_exchange(ExchangeData) -> Result when
     ExchangeData :: data_in(),
@@ -118,27 +120,23 @@ srpc_route(_, __ActionTerm)   -> {error, <<"Invalid srpc action">>}.
 %%--------------------------------------------------------------------------------------------------
 lib_exchange(ExchangeData) ->
   case srpc_lib:process_lib_key_exchange_request(ExchangeData) of
-    {ok, {ClientPublicKey, ReqData}} ->
+    {ok, {ClientPublicKey, OptReqData}} ->
       SrpcHandler = srpc_handler(),
-      RespData =
-        case erlang:function_exported(SrpcHandler, lib_exchange_data, 1) of
-          true ->
-            SrpcHandler:lib_exchange_data(ReqData);
-          false ->
-            <<>>
-        end,
-
       ConnId = SrpcHandler:conn_id(),
       ConnInfo = #{conn_type       => lib
                   ,entity_id       => srpc_lib:srpc_id()
                   ,conn_id         => ConnId
                   ,exch_public_key => ClientPublicKey},
-
-      case srpc_lib:create_lib_key_exchange_response(ConnInfo, RespData) of
+      OptRespData = case erlang:function_exported(SrpcHandler, lib_exchange_data, 1) of
+                      true  -> SrpcHandler:lib_exchange_data(OptReqData);
+                      false -> <<>>
+                    end,
+      case srpc_lib:create_lib_key_exchange_response(ConnInfo, OptRespData) of
         {ok, {ConnInfo2, ExchangeResponse}} ->
           case SrpcHandler:put_exchange(ConnId, ConnInfo2) of
             ok ->
-              {ok, ExchangeResponse};
+              ConnIdLen = byte_size(ConnId),
+              {ok, <<ConnIdLen:8, ConnId/binary, ExchangeResponse/binary>>};
             Error ->
               Error
           end;
@@ -158,12 +156,17 @@ lib_exchange(ExchangeData) ->
     Result  :: ok_response() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 lib_confirm({ConnId, ConfirmRequest}) ->
+  %% io:format("~p:lib_confirm~n ConfirmRequest=~p~n",
+  %%           [?MODULE, srpc_util:bin_to_hex(ConfirmRequest)]),
   SrpcHandler = srpc_handler(),
   case SrpcHandler:get_exchange(ConnId) of
     {ok, ExchConnInfo} ->
       SrpcHandler:delete_exchange(ConnId),
       case srpc_lib:process_lib_key_confirm_request(ExchConnInfo, ConfirmRequest) of
-        {ok, {ClientChallenge, SrpcReqData}} ->
+        {ok, {ServerChallenge, SrpcReqData}} ->
+          %% io:format("~p:lib_confirm~n", [?MODULE]),
+          %% io:format(" ServerChallenge=~p~n", [srpc_util:bin_to_hex(ServerChallenge)]),
+          %% io:format(" SrpcReqData=~p~n", [srpc_util:bin_to_hex(SrpcReqData)]),
           case parse_no_timing_data(SrpcReqData) of
             {ok, {Nonce, ConfirmReqData}} ->
               ConfirmRespData =
@@ -176,7 +179,7 @@ lib_confirm({ConnId, ConfirmRequest}) ->
               Time = system_time(),
               TimeRespData = <<Time:?TIME_BITS, ConfirmRespData/binary>>,
               SrpcRespData = create_srpc_resp_data(Nonce, TimeRespData),
-              case srpc_lib:create_lib_key_confirm_response(ExchConnInfo, ClientChallenge,
+              case srpc_lib:create_lib_key_confirm_response(ExchConnInfo, ServerChallenge,
                                                             SrpcRespData) of
                 {ok, ConnInfo, ConfirmResponse} ->
                   case SrpcHandler:put_conn(ConnId, ConnInfo) of
@@ -194,6 +197,7 @@ lib_confirm({ConnId, ConfirmRequest}) ->
               Error
           end;
         Error ->
+          io:format("Error=~p~n", [Error]),
           Error
       end;
     undefined ->
@@ -378,15 +382,15 @@ registration({ConnId, RegistrationRequest}) ->
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
 -spec server_time({ConnId, Request}) -> Result when
-    ConnId    :: conn_id(),
-    Request     :: binary(),
-    Result      :: ok_response() | error_msg() | invalid_msg().
+    ConnId  :: conn_id(),
+    Request :: binary(),
+    Result  :: ok_response() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 server_time({ConnId, ServerTimeRequest}) ->
   case conn_info(ConnId) of
     {ok, ConnInfo} ->
       %% To bypass req age check (which needs an estimate of server time), don't use srpc_srv:unwrap
-      case srpc_lib:decrypt(origin_client, ConnInfo, ServerTimeRequest) of
+      case srpc_lib:decrypt(origin_requester, ConnInfo, ServerTimeRequest) of
         {ok, ReqData} ->
           case parse_no_timing_data(ReqData) of
             {ok, {Nonce, Data}} ->
@@ -410,9 +414,9 @@ server_time({ConnId, ServerTimeRequest}) ->
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
 -spec refresh({ConnId, Request}) -> Result when
-    ConnId    :: conn_id(),
-    Request     :: binary(),
-    Result      :: ok_response() | error_msg() | invalid_msg().
+    ConnId  :: conn_id(),
+    Request :: binary(),
+    Result  :: ok_response() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 refresh({ConnId, Request}) ->
   case conn_info(ConnId) of
@@ -467,8 +471,8 @@ close({ConnId, CloseRequest}) ->
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
 -spec conn_info(ConnId) -> Result when
-    ConnId    :: conn_id(),
-    Result      :: {ok, conn_info()} | invalid_msg().
+    ConnId :: conn_id(),
+    Result :: {ok, conn_info()} | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 conn_info(ConnId) ->
   SrpcHandler = srpc_handler(),
@@ -493,12 +497,12 @@ conn_info(ConnId) ->
 %%  Unwrap data
 %%--------------------------------------------------------------------------------------------------
 -spec unwrap(ConnInfo, Data) -> Result when
-    ConnInfo    :: conn_info(),
-    Data        :: binary(),
-    Result      :: nonced_data() | invalid_msg().
+    ConnInfo :: conn_info(),
+    Data     :: binary(),
+    Result   :: nonced_data() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 unwrap(ConnInfo, Data) ->
-  case srpc_lib:decrypt(origin_client, ConnInfo, Data) of
+  case srpc_lib:decrypt(origin_requester, ConnInfo, Data) of
     {ok, SrpcData} ->
       parse_request_data(SrpcData);
     Invalid ->
@@ -516,7 +520,7 @@ unwrap(ConnInfo, Data) ->
 %%--------------------------------------------------------------------------------------------------
 wrap(ConnInfo, Nonce, Data) ->
   SrpcData = create_srpc_resp_data(Nonce, Data),
-  srpc_lib:encrypt(origin_server, ConnInfo, SrpcData).
+  srpc_lib:encrypt(origin_responder, ConnInfo, SrpcData).
 
 %%==================================================================================================
 %%

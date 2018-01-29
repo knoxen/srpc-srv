@@ -423,11 +423,15 @@ refresh({ConnId, Request}) ->
     {ok, ConnInfo} ->
       case unwrap(ConnInfo, Request) of
         {ok, {Nonce, Salt}} ->
-          NewConnInfo = srpc_lib:refresh_keys(ConnInfo, Salt),
-          SrpcHandler = srpc_handler(),
-          case SrpcHandler:put_conn(ConnId, NewConnInfo) of
-            ok ->
-              wrap(NewConnInfo, Nonce, Salt);
+          case srpc_lib:refresh_keys(ConnInfo, Salt) of
+            {ok, NewConnInfo} ->
+              SrpcHandler = srpc_handler(),
+              case SrpcHandler:put_conn(ConnId, NewConnInfo) of
+                ok ->
+                  wrap(NewConnInfo, Nonce, Salt);
+                Error ->
+                  Error
+              end;
             Error ->
               Error
           end;

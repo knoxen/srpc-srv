@@ -111,7 +111,7 @@ srpc_route(_, __ActionTerm)   -> {error, <<"Invalid srpc action">>}.
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
 %%  Lib key exchange
-%%    
+%%
 %%
 %%--------------------------------------------------------------------------------------------------
 -spec lib_exchange(ExchangeData) -> Result when
@@ -156,17 +156,12 @@ lib_exchange(ExchangeData) ->
     Result  :: ok_response() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 lib_confirm({ConnId, ConfirmRequest}) ->
-  %% io:format("~p:lib_confirm~n ConfirmRequest=~p~n",
-  %%           [?MODULE, srpc_util:bin_to_hex(ConfirmRequest)]),
   SrpcHandler = srpc_handler(),
   case SrpcHandler:get_exchange(ConnId) of
     {ok, ExchConnInfo} ->
       SrpcHandler:delete_exchange(ConnId),
       case srpc_lib:process_lib_key_confirm_request(ExchConnInfo, ConfirmRequest) of
         {ok, {ServerChallenge, SrpcReqData}} ->
-          %% io:format("~p:lib_confirm~n", [?MODULE]),
-          %% io:format(" ServerChallenge=~p~n", [srpc_util:bin_to_hex(ServerChallenge)]),
-          %% io:format(" SrpcReqData=~p~n", [srpc_util:bin_to_hex(SrpcReqData)]),
           case parse_no_timing_data(SrpcReqData) of
             {ok, {Nonce, ConfirmReqData}} ->
               ConfirmRespData =
@@ -197,7 +192,6 @@ lib_confirm({ConnId, ConfirmRequest}) ->
               Error
           end;
         Error ->
-          io:format("Error=~p~n", [Error]),
           Error
       end;
     undefined ->
@@ -206,7 +200,7 @@ lib_confirm({ConnId, ConfirmRequest}) ->
 
 %%==================================================================================================
 %%
-%% User Client Key Agreement
+%%  User Client Key Agreement
 %%
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
@@ -278,13 +272,11 @@ user_confirm({ConnId, ConfirmRequest}) ->
                   Invalid
               end;
             undefined ->
-              Nonce = crypto:strong_rand_bytes(erlang:trunc(?NONCE_BITS/8)),
-              SrpcRespData = create_srpc_resp_data(Nonce, <<>>),
-              {_, _ConnInfo, ConfirmResponse} =
-                srpc_lib:create_user_key_confirm_response(CryptConnInfo, invalid,
-                                                          ClientChallenge, SrpcRespData),
-              {ok, ConfirmResponse}
+              {ok, create_dummy_response(CryptConnInfo, ClientChallenge)}
           end;
+
+        {invalid, DummyChallenge} ->
+          {ok, create_dummy_response(CryptConnInfo, DummyChallenge)};
         Error ->
           Error
       end;
@@ -292,13 +284,22 @@ user_confirm({ConnId, ConfirmRequest}) ->
       Invalid
   end.
 
+create_dummy_response(ConnInfo, Challenge) ->
+  SrpcRespData = create_srpc_resp_data(<< 0:?NONCE_BITS >>, <<>>),
+  {_, _ConnInfo, DummyResponse} =
+    srpc_lib:create_user_key_confirm_response(ConnInfo, invalid, Challenge, SrpcRespData),
+  DummyResponse.
+
+%% create_dummy_srpc_response_data(DataSize) ->
+  %% create_srpc_resp_data(<< 0:?NONCE_BITS >>, << 0:(8*DataSize) >>).
+
 %%==================================================================================================
 %%
 %%  Registration
 %%
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
-%%  
+%%
 %%--------------------------------------------------------------------------------------------------
 -spec registration({ConnId, Request}) -> Result when
     ConnId    :: conn_id(),
@@ -558,10 +559,11 @@ user_key_exchange_request(ConnId, ConnInfo, {UserId, PublicKey, RequestData}, Mo
       SrpcRespData = create_srpc_resp_data(Nonce, RespData),
       case SrpcHandler:get_registration(UserId) of
         {ok, Registration} ->
-          user_key_exchange_response(ConnId, ConnInfo, Registration, PublicKey, RespData, Morph);
+          user_key_exchange_response(ConnId, ConnInfo, Registration,
+                                     PublicKey, SrpcRespData, Morph);
         undefined ->
-          srpc_lib:create_user_key_exchange_response(ConnId, ConnInfo, invalid, PublicKey, 
-                                                     SrpcRespData)
+          srpc_lib:create_user_key_exchange_response(ConnId, ConnInfo, invalid,
+                                                     PublicKey, SrpcRespData)
       end;
     Invalid ->
       Invalid
@@ -626,7 +628,7 @@ parse_no_timing_data(_) ->
     Data   :: binary(),
     Result :: nonced_data() | invalid_msg().
 %%------------------------------------------------------------------------------------------------
-parse_request_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS, 
+parse_request_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS,
                    NonceLen:?NONCE_BITS, Nonce:NonceLen/binary,
                    ReqData/binary>>) ->
   OKResponse = {ok, {Nonce, ReqData}},

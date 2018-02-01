@@ -314,15 +314,15 @@ registration({ConnId, RegistrationRequest}) ->
           UserId = maps:get(user_id, SrpcRegistrationData),
           SrpcHandler = srpc_handler(),
           case parse_request_data(SrpcReqData) of
-            {ok, {Nonce, ReqRegistrationData}} ->
-              RespRegistrationData =
+            {ok, {Nonce, RegRequestData}} ->
+              RegResponseData =
                 case erlang:function_exported(SrpcHandler, registration_data, 2) of
                   true ->
-                    SrpcHandler:registration_data(UserId, ReqRegistrationData);
+                    SrpcHandler:registration_data(UserId, RegRequestData);
                   false ->
                     <<>>
                 end,
-              SrpcRespData = create_srpc_resp_data(Nonce, RespRegistrationData),
+              SrpcRespData = create_srpc_resp_data(Nonce, RegResponseData),
 
               case RegistrationCode of
                 ?SRPC_REGISTRATION_CREATE ->

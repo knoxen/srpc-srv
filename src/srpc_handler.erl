@@ -22,19 +22,19 @@
   ConnID :: binary().
 
 %%------------------------------------------------------------------------------------------------
-%% @doc Put <code>ConnInfo</code> for <code>ConnId</code> in exchange store.
+%% @doc Put <code>Conn</code> for <code>ConnId</code> in exchange store.
 %%
 %% Returns <code>ok</code> or <code>{error, Reason}</code>
 %%------------------------------------------------------------------------------------------------
--callback put_exchange(ConnId :: conn_id(), ConnInfo :: conn_info()) ->
+-callback put_exchange(ConnId :: conn_id(), Conn :: conn()) ->
   ok | error_msg().
 
 %%------------------------------------------------------------------------------------------------
-%% @doc Put <code>ConnInfo</code> for <code>ConnId</code> in conn store.
+%% @doc Put <code>Conn</code> for <code>ConnId</code> in conn store.
 %%
 %% Returns <code>ok</code> or <code>{error, Reason}</code>
 %%------------------------------------------------------------------------------------------------
--callback put_conn(ConnId :: conn_id(), ConnInfo :: conn_info()) ->
+-callback put_conn(ConnId :: conn_id(), Conn :: conn()) ->
   ok | error_msg().
 
 %%------------------------------------------------------------------------------------------------
@@ -46,24 +46,24 @@
   ok | error_msg().
 
 %%------------------------------------------------------------------------------------------------
-%% @doc Get <code>ConnInfo</code> for <code>ConnId</code> from the exchange store.
+%% @doc Get <code>Conn</code> for <code>ConnId</code> from the exchange store.
 %%
-%% Return the stored <code>ConnInfo</code> or <code>undefined</code>.
+%% Return the stored <code>Conn</code> or <code>undefined</code>.
 %%------------------------------------------------------------------------------------------------
 %% -spec get_exchange(ConnId) -> Result when
 %%     ConnId :: conn_id(),
-%%     Result   :: {ok, conn_info()} | undefined.
+%%     Result   :: {ok, conn()} | undefined.
 %%------------------------------------------------------------------------------------------------
 -callback get_exchange(ConnId :: conn_id()) ->
-  {ok, ConnInfo :: conn_info()} | undefined.
+  {ok, Conn :: conn()} | undefined.
 
 %%------------------------------------------------------------------------------------------------
-%% @doc Get <code>ConnInfo</code> for <code>ConnId</code> from the conn store.
+%% @doc Get <code>Conn</code> for <code>ConnId</code> from the conn store.
 %%
-%% Return the stored <code>ConnInfo</code> or <code>undefined</code>.
+%% Return the stored <code>Conn</code> or <code>undefined</code>.
 %%------------------------------------------------------------------------------------------------
 -callback get_conn(ConnId :: conn_id()) ->
-  {ok, ConnInfo :: conn_info()} | undefined.
+  {ok, Conn :: conn()} | undefined.
 
 %%------------------------------------------------------------------------------------------------
 %% @doc Get <code>Registration</code> for <code>UserId</code> from the registration store.

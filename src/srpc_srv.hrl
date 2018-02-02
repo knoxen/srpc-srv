@@ -46,21 +46,21 @@
 -type hmac_key()      :: <<_:256>>.
 -type sym_alg()       :: aes128 | aes192 | aes256.
 -type sha_alg()       :: sha256 | sha384 | sha512.
--type conn_info()     :: #{conn_id         => conn_id()
-                          ,exch_public_key => exch_key()
-                          ,exch_key_pair   => exch_key_pair()
-                          ,sym_alg         => sym_alg()
-                          ,sha_alg         => sha_alg()
-                          ,req_sym_key     => sym_key()
-                          ,resp_sym_key    => sym_key()
-                          ,hmac_key        => hmac_key()
+-type conn()          :: #{conn_id         => conn_id(),
+                           exch_public_key => exch_key(),
+                           exch_key_pair   => exch_key_pair(),
+                           sym_alg         => sym_alg(),
+                           sha_alg         => sha_alg(),
+                           req_sym_key     => sym_key(),
+                           resp_sym_key    => sym_key(),
+                           hmac_key        => hmac_key()
                           }.
 
--type registration() :: #{user_id  => binary()
-                          ,kdf_salt => binary()
-                          ,srp_salt => binary()
-                          ,verifier => binary()
-                          }.
+-type registration() :: #{user_id  => binary(),
+                          kdf_salt => binary(),
+                          srp_salt => binary(),
+                          verifier => binary()
+                         }.
 
 -type origin()      :: origin_requester | origin_responder.
 -type nonced_data() :: {ok, {binary(), binary()}}.

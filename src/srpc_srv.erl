@@ -705,5 +705,5 @@ srpc_handler() ->
     {ok, SrpcHandler} ->
       SrpcHandler;
     _ ->
-      throw("Application srpc_srv missing env setting for srpc_handler")
+      erlang:error("Missing srpc_srv configuration for srpc_handler")
   end.

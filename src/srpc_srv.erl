@@ -39,7 +39,7 @@ parse_packet(<<16#10, Data/binary>>) ->
 parse_packet(<<16#ff, Data/binary>>) ->
   packet_conn(app_request, Data);
 parse_packet(_) ->
-  {error, <<"Invalid SRPC packet">>}.
+  {error, <<"Invalid Srpc packet">>}.
 
 %%--------------------------------------------------------------------------------------------------
 %%  Packet conn info
@@ -71,7 +71,7 @@ srpc_action(#{conn_id := ConnId}, <<SrpcCode:8, ActionData/binary>>) ->
   srpc_route(SrpcCode, {ConnId, ActionData});
 
 srpc_action(#{conn_id := _ConnId}, _) ->
-  {undefined, {error, <<"Invalid srpc action packet">>}};
+  {undefined, {error, <<"Invalid Srpc action packet">>}};
 
 srpc_action(_, _) ->
   {undefined, {error, <<"Connection info missing conn_id">>}}.
@@ -123,10 +123,10 @@ lib_exchange(ExchangeData) ->
     {ok, {ClientPublicKey, OptReqData}} ->
       SrpcHandler = srpc_handler(),
       ConnId = SrpcHandler:conn_id(),
-      Conn = #{conn_type       => lib
-                  ,entity_id       => srpc_lib:srpc_id()
-                  ,conn_id         => ConnId
-                  ,exch_public_key => ClientPublicKey},
+      Conn = #{type            => lib
+              ,entity_id       => srpc_lib:srpc_id()
+              ,conn_id         => ConnId
+              ,exch_public_key => ClientPublicKey},
       OptRespData = case erlang:function_exported(SrpcHandler, lib_exchange_data, 1) of
                       true  -> SrpcHandler:lib_exchange_data(OptReqData);
                       false -> <<>>
@@ -669,10 +669,10 @@ parse_request_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS,
   end;
 
 parse_request_data(<<_:?HDR_BITS, _Rest/binary>>) ->
-  {error, <<"Invalid SRPC header version number">>};
+  {error, <<"Invalid Srpc header version number">>};
 
 parse_request_data(_ReqData) ->
-  {error, <<"Invalid SRPC request data">>}.
+  {error, <<"Invalid Srpc request data">>}.
 
 %%--------------------------------------------------------------------------------------------------
 %%  Create SRPC formated response data

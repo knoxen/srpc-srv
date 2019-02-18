@@ -67,8 +67,8 @@ packet_conn(Type, <<IdLen:8, Id:IdLen/binary, Data/binary>>) ->
     Data   :: data_in(),
     Result :: {atom(), ok_response() | error_msg() | invalid_msg()}.
 %%--------------------------------------------------------------------------------------------------
-srpc_action(#{conn_id := ConnId}, <<SrpcCode:8, ActionData/binary>>) ->
-  srpc_route(SrpcCode, {ConnId, ActionData});
+srpc_action(#{conn_id := ConnId}, <<Action:8, ActionData/binary>>) ->
+  srpc_route(Action, {ConnId, ActionData});
 
 srpc_action(#{conn_id := _ConnId}, _) ->
   {undefined, {error, <<"Invalid Srpc action packet">>}};
@@ -79,8 +79,8 @@ srpc_action(_, _) ->
 %%--------------------------------------------------------------------------------------------------
 %%  Route SRPC actions
 %%--------------------------------------------------------------------------------------------------
--spec srpc_route(Byte, ActionTerm) -> Result when
-    Byte       :: byte(),
+-spec srpc_route(Action, ActionTerm) -> Result when
+    Action     :: byte(),
     ActionTerm :: {conn_id(), binary(), any()},
     Result     :: {atom(), ok_response() | error_msg() | invalid_msg()}.
 %%--------------------------------------------------------------------------------------------------

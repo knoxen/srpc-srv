@@ -65,12 +65,12 @@ packet_conn(Type, <<IdLen:8, Id:IdLen/binary, Data/binary>>) ->
 -spec srpc_action(Conn, Data) -> Result when
     Conn   :: conn(),
     Data   :: data_in(),
-    Result :: {atom(), ok_response() | error_msg() | invalid_msg()}.
+    Result :: {atom(), ok_binary() | error_msg() | invalid_msg()}.
 %%--------------------------------------------------------------------------------------------------
-srpc_action(#{conn_id := ConnId}, <<Action:8, ActionData/binary>>) ->
+srpc_action(#{id := ConnId}, <<Action:8, ActionData/binary>>) ->
   srpc_route(Action, {ConnId, ActionData});
 
-srpc_action(#{conn_id := _ConnId}, _) ->
+srpc_action(#{id := _ConnId}, _) ->
   {undefined, {error, <<"Invalid Srpc action packet">>}};
 
 srpc_action(_, _) ->
@@ -81,8 +81,8 @@ srpc_action(_, _) ->
 %%--------------------------------------------------------------------------------------------------
 -spec srpc_route(Action, ActionTerm) -> Result when
     Action     :: byte(),
-    ActionTerm :: {conn_id(), binary(), any()},
-    Result     :: {atom(), ok_response() | error_msg() | invalid_msg()}.
+    ActionTerm :: {id(), binary(), any()},
+    Result     :: {atom(), ok_binary() | error_msg() | invalid_msg()}.
 %%--------------------------------------------------------------------------------------------------
 srpc_route(16#01, ActionTerm) -> {lib_confirm, lib_confirm(ActionTerm)};
 
@@ -117,34 +117,34 @@ srpc_route(_, __ActionTerm)   -> {error, <<"Invalid srpc action">>}.
     ExchData :: data_in(),
     Result   :: {ok, binary()} | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
-lib_exchange(#{srpc_id := SrpcId} = Config, ExchData) ->
-  case srpc_lib:process_lib_key_exchange_request(Config, ExchData) of
-    {ok, {ClientPublicKey, OptReqData}} ->
-      SrpcHandler = srpc_handler(),
-      ConnId = SrpcHandler:conn_id(),
-      Conn = #{type        => lib,
-               entity_id   => SrpcId,
-               conn_id     => ConnId,
-               exch_pubkey => ClientPublicKey,
-               config      => Config},
+lib_exchange(Config, ExchReq) ->
+  SrpcHandler = srpc_handler(),
+  ConnId = SrpcHandler:conn_id(),
+  case srpc_lib:process_lib_key_exchange_request(ConnId, Config, ExchReq) of
+    {ok, {ExchConn, OptReqData}} ->
       OptRespData = case erlang:function_exported(SrpcHandler, lib_exchange_data, 1) of
                       true  -> SrpcHandler:lib_exchange_data(OptReqData);
                       false -> <<>>
                     end,
 
-      case srpc_lib:create_lib_key_exchange_response(Conn, OptRespData) of
-        {ok, {Conn2, ExchResp}} ->
-          case SrpcHandler:put_exchange(ConnId, Conn2) of
+      case srpc_lib:create_lib_key_exchange_response(ExchConn, OptRespData) of
+        {ok, {LibConn, ExchResp}} ->
+          case SrpcHandler:put_exchange(ConnId, LibConn) of
             ok ->
               ConnIdLen = byte_size(ConnId),
               {ok, <<ConnIdLen:8, ConnId/binary, ExchResp/binary>>};
             Error ->
               Error
           end;
+
         Error ->
           Error
       end;
-    Invalid ->
+
+    {error, _} = Error ->
+      Error;
+
+    {invalid, _} = Invalid ->
       Invalid
   end.
 
@@ -152,9 +152,9 @@ lib_exchange(#{srpc_id := SrpcId} = Config, ExchData) ->
 %%   Lib Key Agreement Confirm
 %%--------------------------------------------------------------------------------------------------
 -spec lib_confirm({ConnId, Request}) -> Result when
-    ConnId  :: conn_id(),
+    ConnId  :: id(),
     Request :: binary(),
-    Result  :: ok_response() | error_msg() | invalid_msg().
+    Result  :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 lib_confirm({ConnId, ConfirmRequest}) ->
   SrpcHandler = srpc_handler(),
@@ -173,28 +173,26 @@ lib_confirm({ConnId, ConfirmRequest}) ->
                     <<>>
                 end,
               Time = system_time(),
-              TimeRespData = <<Time:?TIME_BITS, ConfirmRespData/binary>>,
+              TimeRespData = <<Time:?SRPC_TIME_BITS, ConfirmRespData/binary>>,
               SrpcRespData = create_srpc_resp_data(Nonce, TimeRespData),
-              case srpc_lib:create_lib_key_confirm_response(ExchConn, ServerChallenge,
-                                                            SrpcRespData) of
-                {ok, Conn, ConfirmResponse} ->
-                  case SrpcHandler:put_conn(ConnId, Conn) of
-                    ok ->
-                      {ok, ConfirmResponse};
-                    Error ->
-                      Error
-                  end;
-                {invalid, ConfirmResponse} ->
-                  {ok, ConfirmResponse};
+              {LibConn, ConfirmResp} = 
+                srpc_lib:create_lib_key_confirm_response(ExchConn, ServerChallenge, SrpcRespData),
+              case SrpcHandler:put_conn(ConnId, LibConn) of
+                ok ->
+                  {ok, ConfirmResp};
+
                 Error ->
                   Error
-              end;
+                end;
+
             Error ->
               Error
           end;
+
         Error ->
           Error
       end;
+
     undefined ->
       {invalid, <<"No exchange info for Client Id: ", ConnId/binary>>}
   end.
@@ -208,10 +206,10 @@ lib_confirm({ConnId, ConfirmRequest}) ->
 %%   User Key Exchange
 %%--------------------------------------------------------------------------------------------------
 -spec user_exchange({ConnId, Request}, Morph) -> Result when
-    ConnId  :: conn_id(),
+    ConnId  :: id(),
     Request :: binary(),
     Morph   :: boolean(),
-    Result  :: ok_response() | error_msg() | invalid_msg().
+    Result  :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 user_exchange({ConnId, ExchData}, Morph) ->
   case conn(ConnId) of
@@ -230,9 +228,9 @@ user_exchange({ConnId, ExchData}, Morph) ->
 %%   User Key Confirm
 %%--------------------------------------------------------------------------------------------------
 -spec user_confirm({ConnId, Request}) -> Result when
-    ConnId  :: conn_id(),
+    ConnId  :: id(),
     Request :: binary(),
-    Result  :: ok_response() | error_msg() | invalid_msg().
+    Result  :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 user_confirm({ConnId, ConfirmRequest}) ->
   case conn(ConnId) of
@@ -286,13 +284,13 @@ user_confirm({ConnId, ConfirmRequest}) ->
   end.
 
 create_dummy_response(Conn, Challenge) ->
-  SrpcRespData = create_srpc_resp_data(<< 0:?NONCE_BITS >>, <<>>),
+  SrpcRespData = create_srpc_resp_data(<< 0:?SRPC_NONCE_BITS >>, <<>>),
   {_, _Conn, DummyResponse} =
     srpc_lib:create_user_key_confirm_response(Conn, invalid, Challenge, SrpcRespData),
   DummyResponse.
 
 %% create_dummy_srpc_response_data(DataSize) ->
-  %% create_srpc_resp_data(<< 0:?NONCE_BITS >>, << 0:(8*DataSize) >>).
+%% create_srpc_resp_data(<< 0:?SRPC_NONCE_BITS >>, << 0:(8*DataSize) >>).
 
 %%==================================================================================================
 %%
@@ -303,9 +301,9 @@ create_dummy_response(Conn, Challenge) ->
 %%
 %%--------------------------------------------------------------------------------------------------
 -spec registration({ConnId, Request}) -> Result when
-    ConnId  :: conn_id(),
+    ConnId  :: id(),
     Request :: binary(),
-    Result  :: ok_response() | error_msg() | invalid_msg().
+    Result  :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 registration({ConnId, RegistrationRequest}) ->
   case conn(ConnId) of
@@ -359,7 +357,7 @@ registration({ConnId, RegistrationRequest}) ->
                       end;
                     undefined ->
                       srpc_lib:create_registration_response(Conn,
-                                                            ?SRPC_REGISTRATION_NOT_FOUND,
+                                                            ?SRPC_REGISTRATION_NONE,
                                                             SrpcRespData)
                   end;
                 _ ->
@@ -384,9 +382,9 @@ registration({ConnId, RegistrationRequest}) ->
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
 -spec server_time({ConnId, Request}) -> Result when
-    ConnId  :: conn_id(),
+    ConnId  :: id(),
     Request :: binary(),
-    Result  :: ok_response() | error_msg() | invalid_msg().
+    Result  :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 server_time({ConnId, ServerTimeRequest}) ->
   case conn(ConnId) of
@@ -397,14 +395,17 @@ server_time({ConnId, ServerTimeRequest}) ->
           case parse_no_timing_data(ReqData) of
             {ok, {Nonce, Data}} ->
               Time = system_time(),
-              TimeRespData = <<Time:?TIME_BITS, Data/binary>>,
+              TimeRespData = <<Time:?SRPC_TIME_BITS, Data/binary>>,
               wrap(Conn, Nonce, TimeRespData);
+
             Error ->
               Error
           end;
+
         Error ->
           Error
       end;
+
     Invalid ->
       Invalid
   end.
@@ -416,30 +417,34 @@ server_time({ConnId, ServerTimeRequest}) ->
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
 -spec refresh({ConnId, Request}) -> Result when
-    ConnId  :: conn_id(),
+    ConnId  :: id(),
     Request :: binary(),
-    Result  :: ok_response() | error_msg() | invalid_msg().
+    Result  :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 refresh({ConnId, Request}) ->
   case conn(ConnId) of
     {ok, Conn} ->
       case unwrap(Conn, Request) of
-        {ok, {Nonce, Salt}} ->
-          case srpc_lib:refresh_keys(Conn, Salt) of
+        {ok, {Nonce, Data}} ->
+          case srpc_lib:refresh_keys(Conn, Data) of
             {ok, NewConn} ->
               SrpcHandler = srpc_handler(),
               case SrpcHandler:put_conn(ConnId, NewConn) of
                 ok ->
-                  wrap(NewConn, Nonce, Salt);
+                  wrap(NewConn, Nonce, Data);
+
                 Error ->
                   Error
               end;
+
             Error ->
               Error
           end;
+
         Error ->
           Error
       end;
+
     Invalid ->
       Invalid
   end.
@@ -451,9 +456,9 @@ refresh({ConnId, Request}) ->
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
 -spec close({ConnId, Request}) -> Result when
-    ConnId  :: conn_id(),
+    ConnId  :: id(),
     Request :: binary(),
-    Result  :: ok_response() | error_msg() | invalid_msg().
+    Result  :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 close({ConnId, CloseRequest}) ->
   case conn(ConnId) of
@@ -463,21 +468,23 @@ close({ConnId, CloseRequest}) ->
           SrpcHandler = srpc_handler(),
           SrpcHandler:delete_conn(ConnId),
           wrap(Conn, Nonce, Data);
+
         Error ->
           Error
       end;
+
     Invalid ->
       Invalid
   end.
 
 %%==================================================================================================
 %%
-%%  Client info map
+%%  Connection
 %%
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
 -spec conn(ConnId) -> Result when
-    ConnId :: conn_id(),
+    ConnId :: id(),
     Result :: {ok, conn()} | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 conn(ConnId) ->
@@ -487,9 +494,11 @@ conn(ConnId) ->
       case SrpcHandler:get_conn(ConnId) of
         undefined ->
           {invalid, <<"Invalid ConnId: ", ConnId/binary>>};
+
         Result ->
           Result
       end;
+
     Result ->
       Result
   end.
@@ -522,7 +531,7 @@ unwrap(Conn, Data) ->
     Conn   :: conn(),
     Nonce  :: binary(),
     Data   :: binary(),
-    Result :: binary() | error_msg().
+    Result :: binary().
 %%--------------------------------------------------------------------------------------------------
 wrap(Conn, Nonce, Data) ->
   SrpcData = create_srpc_resp_data(Nonce, Data),
@@ -538,14 +547,14 @@ wrap(Conn, Nonce, Data) ->
 %%--------------------------------------------------------------------------------------------------
 -spec user_key_exchange_request(ConnId, Conn, ExchTerm, Morph)
                                -> Result when
-    ConnId      :: conn_id(),
+    ConnId      :: id(),
     Conn        :: conn(),
     ExchTerm    :: {UserId, PublicKey, RequestData},
-    UserId      :: user_id(),
-    PublicKey   :: exch_key(),
+    UserId      :: id(),
+    PublicKey   :: srp_pub_key(),
     RequestData :: binary(),
     Morph       :: boolean(),
-    Result      :: ok_response() | error_msg() | invalid_msg().
+    Result      :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
 user_key_exchange_request(ConnId, Conn, {UserId, PublicKey, RequestData}, Morph) ->
   case parse_request_data(RequestData) of
@@ -561,12 +570,20 @@ user_key_exchange_request(ConnId, Conn, {UserId, PublicKey, RequestData}, Morph)
       SrpcRespData = create_srpc_resp_data(Nonce, RespData),
       case SrpcHandler:get_registration(UserId) of
         {ok, Registration} ->
-          user_key_exchange_response(ConnId, Conn, Registration,
-                                     PublicKey, SrpcRespData, Morph);
+          user_key_exchange_response(ConnId, Conn, Registration, PublicKey, SrpcRespData, Morph);
+
         undefined ->
-          srpc_lib:create_user_key_exchange_response(ConnId, Conn, invalid,
-                                                     PublicKey, SrpcRespData)
+          case srpc_lib:create_user_key_exchange_response(ConnId, Conn,
+                                                          invalid,
+                                                          PublicKey, SrpcRespData) of
+            {ok, {_Conn, ExchangeResponse}} ->
+              {ok, ExchangeResponse};
+
+            Error ->
+              Error
+          end
       end;
+
     Invalid ->
       Invalid
   end.
@@ -576,15 +593,15 @@ user_key_exchange_request(ConnId, Conn, {UserId, PublicKey, RequestData}, Morph)
 %%--------------------------------------------------------------------------------------------------
 -spec user_key_exchange_response(ConnId, Conn, Registration, PublicKey, RespData, Morph)
                                 -> Result when
-    ConnId       :: conn_id(),
+    ConnId       :: id(),
     Conn         :: conn(),
-    Registration :: registration(),
-    PublicKey    :: exch_key(),
+    Registration :: srp_registration() | invalid,
+    PublicKey    :: srp_pub_key(),
     RespData     :: binary(),
     Morph        :: boolean(),
-    Result       :: ok_response() | error_msg().
+    Result       :: ok_binary() | error_msg().
 %%--------------------------------------------------------------------------------------------------
-user_key_exchange_response(ConnId, Conn, Registration, PublicKey, RespData, Morph) ->
+user_key_exchange_response(ConnId, ExchConn, Registration, PublicKey, RespData, Morph) ->
   SrpcHandler = srpc_handler(),
   UserConnId =
     case Morph of
@@ -593,10 +610,10 @@ user_key_exchange_response(ConnId, Conn, Registration, PublicKey, RespData, Morp
       _ ->
         SrpcHandler:conn_id()
     end,
-  case srpc_lib:create_user_key_exchange_response(UserConnId, Conn, Registration,
+  case srpc_lib:create_user_key_exchange_response(UserConnId, ExchConn,
+                                                  Registration,
                                                   PublicKey, RespData) of
-    {ok, {ExchConn, ExchangeResponse}} ->
-      UserConn = maps:put(conn_id, UserConnId, ExchConn),
+    {ok, {UserConn, ExchangeResponse}} ->
       case SrpcHandler:put_exchange(UserConnId, UserConn) of
         ok ->
           {ok, ExchangeResponse};
@@ -615,9 +632,9 @@ user_key_exchange_response(ConnId, Conn, Registration, PublicKey, RespData, Morp
     Result :: nonced_data() | error_msg().
 %%--------------------------------------------------------------------------------------------------
 
-parse_no_timing_data(<<?HDR_VSN:?HDR_BITS, _RequestTime:?TIME_BITS,
-                    NonceLen:?NONCE_BITS, Nonce:NonceLen/binary,
-                    Data/binary>>) ->
+parse_no_timing_data(<<?SRPC_HDR_VSN:?SRPC_HDR_BITS, _RequestTime:?SRPC_TIME_BITS,
+                       NonceLen:?SRPC_NONCE_BITS, Nonce:NonceLen/binary,
+                       Data/binary>>) ->
   {ok, {Nonce, Data}};
 
 parse_no_timing_data(_) ->
@@ -630,14 +647,14 @@ parse_no_timing_data(_) ->
     Data   :: binary(),
     Result :: nonced_data() | invalid_msg().
 %%------------------------------------------------------------------------------------------------
-parse_request_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS,
-                   NonceLen:?NONCE_BITS, Nonce:NonceLen/binary,
-                   ReqData/binary>>) ->
-  OKResponse = {ok, {Nonce, ReqData}},
+parse_request_data(<<?SRPC_HDR_VSN:?SRPC_HDR_BITS, ReqTime:?SRPC_TIME_BITS,
+                     NonceLen:?SRPC_NONCE_BITS, Nonce:NonceLen/binary,
+                     ReqData/binary>>) ->
+  OkResponse = {ok, {Nonce, ReqData}},
   SrpcHandler = srpc_handler(),
   case erlang:function_exported(SrpcHandler, req_age_tolerance, 0) of
     false ->
-      OKResponse;
+      OkResponse;
     true ->
       case SrpcHandler:req_age_tolerance() of
         Tolerance when 0 < Tolerance ->
@@ -647,18 +664,18 @@ parse_request_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS,
             true ->
               case erlang:byte_size(Nonce) of
                 0 ->
-                  OKResponse;
+                  OkResponse;
                 _ ->
                   case erlang:function_exported(SrpcHandler, nonce, 1) of
                     true ->
                       case SrpcHandler:nonce(Nonce) of
                         true ->
-                          OKResponse;
+                          OkResponse;
                         false ->
                           {invalid, <<"Repeat nonce: ", Nonce/binary>>}
                       end;
                     false ->
-                      OKResponse
+                      OkResponse
                   end
               end;
             false ->
@@ -666,11 +683,11 @@ parse_request_data(<<?HDR_VSN:?HDR_BITS, ReqTime:?TIME_BITS,
               {invalid, <<"Request age: ", Age/binary>>}
           end;
         _ ->
-          OKResponse
+          OkResponse
       end
   end;
 
-parse_request_data(<<_:?HDR_BITS, _Rest/binary>>) ->
+parse_request_data(<<_:?SRPC_HDR_BITS, _Rest/binary>>) ->
   {error, <<"Invalid Srpc header version number">>};
 
 parse_request_data(_ReqData) ->
@@ -687,7 +704,7 @@ parse_request_data(_ReqData) ->
 create_srpc_resp_data(Nonce, Data) ->
   NonceLen = erlang:byte_size(Nonce),
   Time = system_time(),
-  <<?HDR_VSN:?HDR_BITS, Time:?TIME_BITS, NonceLen:?NONCE_BITS, Nonce/binary, Data/binary>>.
+  <<?SRPC_HDR_VSN:?SRPC_HDR_BITS, Time:?SRPC_TIME_BITS, NonceLen:?SRPC_NONCE_BITS, Nonce/binary, Data/binary>>.
 
 %%--------------------------------------------------------------------------------------------------
 %%  System time

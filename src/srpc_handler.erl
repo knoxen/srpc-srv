@@ -54,7 +54,7 @@
 %%     Result :: {ok, conn()} | undefined.
 %%------------------------------------------------------------------------------------------------
 -callback get_exchange(ConnId :: id()) ->
-  {ok,	Conn :: conn()} | undefined.
+  {ok, Conn :: conn()} | undefined.
 
 %%------------------------------------------------------------------------------------------------
 %% @doc Get <code>Conn</code> for <code>ConnId</code> from the conn store.

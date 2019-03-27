@@ -602,11 +602,11 @@ unwrap(Conn, Data) ->
     Conn   :: conn(),
     Nonce  :: binary(),
     Data   :: binary(),
-    Result :: binary().
+    Result :: ok_binary().
 %%--------------------------------------------------------------------------------------------------
 wrap(Conn, Nonce, Data) ->
   SrpcData = create_srpc_resp_data(Nonce, Data),
-  srpc_lib:encrypt(responder, Conn, SrpcData).
+  {ok, srpc_lib:encrypt(responder, Conn, SrpcData)}.
 
 %%==================================================================================================
 %%

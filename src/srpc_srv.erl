@@ -317,14 +317,14 @@ create_user_exchange_response(ExchConn, Registration, PublicKey, RespData, Morph
 
 
 %%--------------------------------------------------------------------------------------------------
-%%   User Key Confirm
+%%   User Confirm
 %%--------------------------------------------------------------------------------------------------
 -spec user_confirm(Conn, ConfirmReq) -> Result when
     Conn       :: conn(),
     ConfirmReq :: binary(),
     Result     :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
-user_confirm(#{conn_id := ConnId} = CryptConn, ConfirmReq) ->
+user_confirm(CryptConn, ConfirmReq) ->
   case srpc_lib:process_user_confirm_request(CryptConn, ConfirmReq) of
     {ok, {UserConnId, ClientChallenge, ConfirmReqData}} ->
       SrpcHandler = srpc_handler(),
@@ -381,9 +381,6 @@ create_dummy_response(Conn, Challenge) ->
     srpc_lib:create_user_confirm_response(Conn, invalid, Challenge, SrpcRespData),
   DummyResponse.
 
-%% create_dummy_srpc_response_data(DataSize) ->
-%% create_srpc_resp_data(<< 0:?SRPC_NONCE_BITS >>, << 0:(8*DataSize) >>).
-
 %%==================================================================================================
 %%
 %%  Registration
@@ -400,7 +397,7 @@ create_dummy_response(Conn, Challenge) ->
 registration(Conn, RegReq) ->
   case srpc_lib:process_registration_request(Conn, RegReq) of
     {ok, {RegistrationCode, SrpcRegistrationData, SrpcReqData}} ->
-      UserId = maps:get(user_id, SrpcRegistrationData),
+      #{user_id := UserId} = SrpcRegistrationData,
       SrpcHandler = srpc_handler(),
       case parse_request_data(SrpcReqData) of
         {ok, {Nonce, RegRequestData}} ->
@@ -408,58 +405,83 @@ registration(Conn, RegReq) ->
             case erlang:function_exported(SrpcHandler, registration_data, 2) of
               true ->
                 SrpcHandler:registration_data(UserId, RegRequestData);
+
               false ->
                 <<>>
             end,
-          SrpcRespData = create_srpc_resp_data(Nonce, RegResponseData),
 
-          case RegistrationCode of
-            ?SRPC_REGISTRATION_CREATE ->
-              case SrpcHandler:get_registration(UserId) of
-                undefined ->
-                  case SrpcHandler:put_registration(UserId, SrpcRegistrationData) of
-                    ok ->
-                      srpc_lib:create_registration_response(Conn,
-                                                            ?SRPC_REGISTRATION_OK,
-                                                            SrpcRespData);
-                    _Error ->
-                      srpc_lib:create_registration_response(Conn,
-                                                            ?SRPC_REGISTRATION_ERROR,
-                                                            SrpcRespData)
-                  end;
-                {ok, _SrpcRegistrationData} ->
-                  srpc_lib:create_registration_response(Conn,
-                                                        ?SRPC_REGISTRATION_DUP,
-                                                        SrpcRespData)
-              end;
-            ?SRPC_REGISTRATION_UPDATE ->
-              case SrpcHandler:get_registration(UserId) of
-                {ok, _PrevSrpcRegistrationData} ->
-                  case SrpcHandler:put_registration(UserId, SrpcRegistrationData) of
-                    ok ->
-                      srpc_lib:create_registration_response(Conn,
-                                                            ?SRPC_REGISTRATION_OK,
-                                                            SrpcRespData);
-                    _Error ->
-                      srpc_lib:create_registration_response(Conn,
-                                                            ?SRPC_REGISTRATION_ERROR,
-                                                            SrpcRespData)
-                  end;
-                undefined ->
-                  srpc_lib:create_registration_response(Conn,
-                                                        ?SRPC_REGISTRATION_NONE,
-                                                        SrpcRespData)
-              end;
-            _ ->
-              srpc_lib:create_registration_response(Conn,
-                                                    ?SRPC_REGISTRATION_ERROR,
-                                                    SrpcRespData)
-          end;
+          SrpcRespData = create_srpc_resp_data(Nonce, RegResponseData),
+          RegistrationResp = 
+            case RegistrationCode of
+              ?SRPC_REGISTRATION_CREATE ->
+                create_registration(Conn, UserId, SrpcRegistrationData, SrpcRespData);
+
+              ?SRPC_REGISTRATION_UPDATE ->
+                update_registration(Conn, UserId, SrpcRegistrationData, SrpcRespData);
+
+              _ ->
+                srpc_lib:create_registration_response(Conn, ?SRPC_REGISTRATION_ERROR, SrpcRespData)
+            end,
+          {ok, RegistrationResp};
+
         Invalid ->
           Invalid
       end;
+
     Error ->
       Error
+  end.
+
+%%--------------------------------------------------------------------------------------------------
+%%  Create registration
+%%--------------------------------------------------------------------------------------------------
+-spec create_registration(Conn, UserId, RegData, RespData) -> Result when
+    Conn     :: conn(),
+    UserId   :: id(),
+    RegData  :: binary(),
+    RespData :: binary(),
+    Result   :: binary().
+%%--------------------------------------------------------------------------------------------------
+create_registration(Conn, UserId, RegData, RespData) ->
+  SrpcHandler = srpc_handler(),
+  case SrpcHandler:get_registration(UserId) of
+    undefined ->
+      case SrpcHandler:put_registration(UserId, RegData) of
+        ok ->
+          srpc_lib:create_registration_response(Conn, ?SRPC_REGISTRATION_OK,  RespData);
+
+        _Error ->
+          srpc_lib:create_registration_response(Conn, ?SRPC_REGISTRATION_ERROR,  RespData)
+      end;
+
+    {ok, _RegData} ->
+      srpc_lib:create_registration_response(Conn, ?SRPC_REGISTRATION_DUP, RespData)
+  end.
+
+%%--------------------------------------------------------------------------------------------------
+%%  Update registration
+%%--------------------------------------------------------------------------------------------------
+-spec update_registration(Conn, UserId, RegData, RespData) -> Result when
+    Conn     :: conn(),
+    UserId   :: id(),
+    RegData  :: binary(),
+    RespData :: binary(),
+    Result   :: binary().
+%%--------------------------------------------------------------------------------------------------
+update_registration(Conn, UserId, RegData, RespData) ->
+  SrpcHandler = srpc_handler(),
+  case SrpcHandler:get_registration(UserId) of
+    {ok, _PrevRegData} ->
+      case SrpcHandler:put_registration(UserId, RegData) of
+        ok ->
+          srpc_lib:create_registration_response(Conn, ?SRPC_REGISTRATION_OK, RespData);
+
+        _Error ->
+          srpc_lib:create_registration_response(Conn, ?SRPC_REGISTRATION_ERROR, RespData)
+      end;
+
+    undefined ->
+      srpc_lib:create_registration_response(Conn, ?SRPC_REGISTRATION_NONE, RespData)
   end.
 
 %%==================================================================================================
@@ -492,7 +514,7 @@ server_time(Conn, TimeReq) ->
 
 %%==================================================================================================
 %%
-%% Refresh Srpc Keys
+%% Refresh Conn Keys
 %%
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------
@@ -501,15 +523,13 @@ server_time(Conn, TimeReq) ->
     RefreshReq :: binary(),
     Result     :: ok_binary() | error_msg() | invalid_msg().
 %%--------------------------------------------------------------------------------------------------
-refresh(#{conn_id := ConnId,
-          keys := #{}
-         } = OldConn,
-        RefreshReq) ->
-  case unwrap(OldConn, RefreshReq) of
+refresh(Conn, RefreshReq) ->
+  case unwrap(Conn, RefreshReq) of
     {ok, {Nonce, Data}} ->
-      case srpc_lib:refresh_keys(OldConn, Data) of
+      case srpc_lib:refresh_keys(Conn, Data) of
         {ok, FreshConn} ->
           SrpcHandler = srpc_handler(),
+          #{conn_id := ConnId} = FreshConn,
           case SrpcHandler:put_conn(ConnId, FreshConn) of
             ok ->
               wrap(FreshConn, Nonce, Data);
@@ -528,7 +548,7 @@ refresh(#{conn_id := ConnId,
 
 %%==================================================================================================
 %%
-%% Client Close
+%% Close Connection
 %%
 %%==================================================================================================
 %%--------------------------------------------------------------------------------------------------

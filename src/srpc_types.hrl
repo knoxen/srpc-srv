@@ -97,7 +97,6 @@
                   exch_info => exch_info(),
                   config    => srpc_client_config() | srpc_server_config(),
                   msg_hdr   => binary(),
-                  sec_algs  => sec_algs(),
                   keys      => conn_keys()
                  }.
 
